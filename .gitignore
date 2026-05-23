@@ -1,0 +1,8 @@
+CMakeCache.txt
+Makefile
+compile_commands.json
+cmake_install.cmake
+.cache/
+CMakeFiles/
+finite_em
+
