@@ -2,7 +2,9 @@
 #include <GLFW/glfw3.h>
 
 #include <glm/common.hpp>
+#include <glm/exponential.hpp>
 #include <glm/ext/scalar_constants.hpp>
+#include <glm/geometric.hpp>
 #include <glm/trigonometric.hpp>
 #include <iostream>
 #include <stdio.h>
@@ -70,45 +72,46 @@ struct mVertex {
     glm::vec3 color;
 };
 
-std::unique_ptr<FemMesh> demoTriangleMesh(int size) {
-    auto res = std::make_unique<FemMesh>();
-    std::vector<Node> *nodes = &res->nodes;
+std::unique_ptr<FemMesh> demoTriangleMesh(int size, float (*u)(float, float)) {
+    std::vector<Node> nodes;
     std::vector<unsigned int> mIndices;
 
     const float range = 0.8f; 
 
     float delta = range / (float)size;
 
+    float eps = (1 + (float)size/15)*glm::epsilon<float>();
+
     //left boundary
-    for(float i = -range; i <= range + 2*glm::epsilon<float>(); i += delta) {
-        Node v = {{-range, i}, true};
-        nodes->push_back(v);
+    for(float y = -range; y <= range + eps; y += delta) {
+        Node v = {{-range, y}, dirichlet, u(-range, y)};
+        nodes.push_back(v);
     }
 
 
-    for(float i = -range + delta; i <= range - delta + 2*glm::epsilon<float>(); i += delta) {
+    for(float x = -range + delta; x <= range - delta + eps; x += delta) {
         //top boundary
-        Node v = {{i, -range}, true};
-        nodes->push_back(v);
+        Node v = {{x, -range}, dirichlet, u(x, -range)};
+        nodes.push_back(v);
 
-        for(float j = -range + delta; j <= range - delta + 2*glm::epsilon<float>(); j += delta) {
-            Node v = {{i, j}, false};
-            nodes->push_back(v);
+        for(float y = -range + delta; y <= range - delta + eps; y += delta) {
+            Node v = {{x, y}, active};
+            nodes.push_back(v);
         }
 
         //bottom boundary
-        v = {{i, range}, true};
-        nodes->push_back(v);
+        v = {{x, range}, dirichlet, u(x, range)};
+        nodes.push_back(v);
     }
 
     //right boundary
-    for(float i = -range; i <= range + 2*glm::epsilon<float>(); i += delta) {
-        Node v = {{range, i}, true};
-        nodes->push_back(v);
+    for(float y = -range; y <= range + eps; y += delta) {
+        Node v = {{range, y}, dirichlet, u(range, y)};
+        nodes.push_back(v);
     }
 
     int doublesize = 2*size + 1;
-    printf("Nodesize  = %zu, dsize = %d, dsize^2 = %d\n", nodes->size(), doublesize, doublesize*doublesize -1 );
+    printf("Nodesize  = %zu, dsize = %d, dsize^2 = %d\n", nodes.size(), doublesize, doublesize*doublesize -1 );
     for(int i = 0; i < doublesize - 1; i++) {
         for(int j = 0; j < doublesize - 1; j++) {
             // 90 deg top left
@@ -122,7 +125,7 @@ std::unique_ptr<FemMesh> demoTriangleMesh(int size) {
             mIndices.push_back(doublesize * (i + 1) + (j + 1));
         }
     }
-    res->setupFE(mIndices);
+    auto res = std::make_unique<FemMesh>(nodes, mIndices);
 
     printf("made mesh\n");
     return std::move(res);
@@ -136,31 +139,30 @@ VertexArray demoTriangleMeshGr(const std::unique_ptr<FemMesh> &femmesh, int size
 
 //  glm::vec3 colors[] = {{1.0, 0.1, 0.1}, {0.1, 1.0, 0.1}, {0.1, 0.1, 1.0}, 
 //                          {0.5, 0.0, 0.0}, {0.0, 0.5, 0.0}, {0.0, 0.0, 0.5}};
-    int color = 0;
     int doublesize = 2*size + 1;
 
     float max = 0;
-    for(auto color: colors) {
-        if(color > max) {
-            max = color;
+    for(auto node: femmesh->nodes) {
+        if(glm::abs(node.value) > max) {
+            max = glm::abs(node.value);
         }
     }
 
     for(int i = 0; i < doublesize; i++) {
         for(int j = 0; j < doublesize; j++) {
-            float colorVal = glm::atan(colors[doublesize * i + j] / max);
+            float colorVal = glm::atan(femmesh->nodes[doublesize * i + j].value / max);
+            float greenColorVal =(
+                    (glm::abs(max) - glm::abs(femmesh->nodes[doublesize * i + j].value)*4) / glm::abs(max));
 
-            mVertex v = {femmesh->nodes[doublesize * i + j].position, {colorVal, 0.0, -colorVal}};
+            mVertex v = {femmesh->nodes[doublesize * i + j].position, {colorVal, greenColorVal, -colorVal}};
             mVertices.push_back(v);
-            color++;
-            color = color % 6;
         }
     }
 
-    for(auto elem: femmesh->elems) {
-        mIndices.push_back(elem.nodes[0]);
-        mIndices.push_back(elem.nodes[1]);
-        mIndices.push_back(elem.nodes[2]);
+    for(int i = 0; i < femmesh->elems.size(); i++) {
+        mIndices.push_back(femmesh->indexOfNodeOfElement(i, 0));
+        mIndices.push_back(femmesh->indexOfNodeOfElement(i, 1));
+        mIndices.push_back(femmesh->indexOfNodeOfElement(i, 2));
     }
 
     VertexArray triangleMesh;
@@ -175,14 +177,11 @@ VertexArray demoTriangleMeshGr(const std::unique_ptr<FemMesh> &femmesh, int size
 }
 
 float f(float x, float y) {
-    float top = 0.4;
-    float bottom = 0.0;
-    float left = -0.1;
-    float right = 0.1;
-    if(x < right && x > left && y < top && y > bottom) {
-        return 10000;
-    }
-    return -0.1;
+    return x*40;
+}
+
+float u(float x, float y) {
+    return -x;
 }
 
 int main(int argc, char* argv[]) {
@@ -191,14 +190,23 @@ int main(int argc, char* argv[]) {
     ctx->disableMouse();
     ctx->disable(GL_DEPTH_TEST);
 
-    const int size = 15;
-    auto fTriangles = demoTriangleMesh(size);
+    const int size = 100;
+    auto fTriangles = demoTriangleMesh(size, u);
     Solver solver;
 
+    printf("Solving...\n");
     auto colors = solver.solve(*fTriangles, f);
+
+    printf("Solved! colors.size %zu\n", colors.size());
+
+    for(int i = 0; i < fTriangles->activeNodes.size(); i++) {
+        fTriangles->nodes[fTriangles->activeNodes[i]].value = colors[i];
+    }
+    printf("assigned colors\n");
 
     VertexArray triangle = demoTriangleMeshGr(fTriangles, size, colors);
 
+    printf("created triangle\n");
     glfwSwapInterval(1);
     
     Shader color("general/graphics/glsl/color.vert", "general/graphics/glsl/color.frag");

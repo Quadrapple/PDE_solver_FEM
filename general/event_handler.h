@@ -48,7 +48,6 @@ class FrameListener {
         virtual void onFrameEnd() = 0;
 };
 
-//TODO: remove all statics where possible
 class EventHandler : public State {
     public:
         EventHandler(std::string title, glm::uvec2 size);

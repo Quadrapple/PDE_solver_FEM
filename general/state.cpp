@@ -42,7 +42,7 @@ void State::initGLAD() {
 }
 
 void State::createWindow(std::string title, glm::uvec2 size) {
-    window = glfwCreateWindow(size.x, size.y, "Asteroids", NULL, NULL);
+    window = glfwCreateWindow(size.x, size.y, title.c_str(), NULL, NULL);
     glfwMakeContextCurrent(window);
 
     if(!window) {
