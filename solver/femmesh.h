@@ -9,9 +9,9 @@ enum NodeType {
 };
 
 struct Node {
-    glm::vec2 position;
+    glm::dvec2 position;
     NodeType type;
-    float value;
+    double value;
 };
 
 // ^

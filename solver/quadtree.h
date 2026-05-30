@@ -3,38 +3,39 @@
 #include <memory>
 #include <vector>
 
-class Quadtree;
+class KDTree;
 
-struct QuadtreeQuad {
-    float split;
+struct KDtreeQuad {
+    double split;
     bool full;
     int size;
     std::vector<unsigned int> array;
-    const Quadtree *parent;
+    const KDTree *parent;
 
-    QuadtreeQuad(const Quadtree *parent);
+    KDtreeQuad(const KDTree *parent);
 
-    std::unique_ptr<QuadtreeQuad> hi;
-    std::unique_ptr<QuadtreeQuad> lo;
+    std::unique_ptr<KDtreeQuad> hi;
+    std::unique_ptr<KDtreeQuad> lo;
 
     void putall(int depth, int maxlen);
     void print();
 };
 
-class Quadtree {
+class KDTree {
     public:
-        Quadtree(const Quadtree&) = delete;
-        Quadtree operator=(const Quadtree&) = delete;
+        KDTree(const KDTree&) = delete;
+        KDTree operator=(const KDTree&) = delete;
 
-        Quadtree() {
+        KDTree() {
         }
 
         const int maxsize = 3;
         void putall(std::shared_ptr<std::vector<Node>> nodes);
 
+        std::shared_ptr<std::vector<Node>> nodes;
+        std::unique_ptr<KDtreeQuad> root;
+
         bool compareX(const unsigned int &a, const unsigned int &b) const;
         bool compareY(const unsigned int &a, const unsigned int &b) const;
-
-        std::shared_ptr<std::vector<Node>> nodes;
-        std::unique_ptr<QuadtreeQuad> root;
+    private:
 };

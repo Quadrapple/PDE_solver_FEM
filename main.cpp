@@ -95,8 +95,8 @@ struct Adjacency {
 std::shared_ptr<std::vector<Node>> demoTriangleMesh(int size, float (*u)(float, float)) {
     auto nodes = std::make_shared<std::vector<Node>>();
     
-    const float range = 0.8f; 
-    float delta = range / (float)size;
+    const double range = 10.0; 
+    double delta = range / (float)size;
 
     std::vector<std::list<unsigned int>> adj; // adjacencies
 
@@ -127,7 +127,8 @@ std::shared_ptr<std::vector<Node>> demoTriangleMesh(int size, float (*u)(float, 
     //INTERNAL=================================================
     for(int x = -size + 1; x <= size - 1; x++) {
         for(int y = -size + 1; y <= size - 1; y++) {
-            Node v = {{x*delta, y*delta}, active, 0.0f};
+            Node v = {{x*delta , y*delta}, active, 0.0f};
+            v.position += glm::vec2{ ((double)rand() / RAND_MAX - 0.5) * (delta/10), (double)rand() / RAND_MAX * (delta/2) };
             nodes->push_back(v);
         }
     }
@@ -153,17 +154,15 @@ VertexArray visTriangulation(const std::unique_ptr<QuadEdge> &qu) {
     std::vector<mVertex> mVertices;
     std::vector<unsigned int> mIndices;
 
-    const float range = 0.8f; 
-
 //  glm::vec3 colors[] = {{1.0, 0.1, 0.1}, {0.1, 1.0, 0.1}, {0.1, 0.1, 1.0}, 
 //                          {0.5, 0.0, 0.0}, {0.0, 0.5, 0.0}, {0.0, 0.0, 0.5}};
 
     for(auto edgerecord : qu->edgeRecords) {
-        if(edgerecord->edges[0].orig() <= -1) {
+        if(edgerecord == nullptr || edgerecord->edges[0].orig() <= -1) {
             continue;
         }
-        glm::vec2 org = qu->origOf(&edgerecord->edges[0]).position;
-        glm::vec2 dst = qu->destOf(&edgerecord->edges[0]).position;
+        glm::vec2 org = qu->origOf(&edgerecord->edges[0]).position / 11.0;
+        glm::vec2 dst = qu->destOf(&edgerecord->edges[0]).position / 11.0;
 
         mVertices.push_back({org, {1.0, 1.0, 1.0}});
         mVertices.push_back({dst, {1.0, 1.0, 1.0}});
@@ -244,13 +243,15 @@ int main(int argc, char* argv[]) {
     ctx->disableMouse();
     ctx->disable(GL_DEPTH_TEST);
 
-    const int size = 2;
+    int g = rand();
+    const int size = 7;
 
     auto nodes = demoTriangleMesh(size, u);
+    printf("nodes size %zu\n", nodes->size());
 
     auto qedge = std::make_unique<QuadEdge>(nodes);
     printf("created quadedge\n");
-    auto qtree = std::make_unique<Quadtree>();
+    auto qtree = std::make_unique<KDTree>();
     qtree->putall(nodes);
 
     std::vector<unsigned int> ind;

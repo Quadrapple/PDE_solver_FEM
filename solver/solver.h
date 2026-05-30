@@ -5,7 +5,7 @@
 
 struct AssembledRow {
     std::vector<unsigned int> indices;
-    std::vector<float> values;
+    std::vector<double> values;
 };
 
 class SquareMatrix {
@@ -14,14 +14,14 @@ class SquareMatrix {
 
         SquareMatrix();
         SquareMatrix(unsigned int rowCapacity);
-        void put(unsigned int row, unsigned int col, float val);
+        void put(unsigned int row, unsigned int col, double val);
 };
 
 class Solver {
 
     public:
-        std::vector<float> solve(const FemMesh &mesh, float (*function)(float, float));
+        std::vector<double> solve(const FemMesh &mesh, double (*function)(double, double));
     private:
 
-        std::pair<SquareMatrix, std::vector<float>> assemble(const FemMesh &mesh, float (*function)(float, float));
+        std::pair<SquareMatrix, std::vector<double>> assemble(const FemMesh &mesh, double (*function)(double, double));
 };

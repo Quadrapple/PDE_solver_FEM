@@ -1,5 +1,3 @@
-#pragma once
-
 #include "solver.h"
 #include "femmesh.h"
 #include <algorithm>
@@ -7,40 +5,40 @@
 #include <glm/common.hpp>
 #include <iterator>
 
-float triangle_area(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2) {
+double triangle_area(glm::dvec2 p0, glm::dvec2 p1, glm::dvec2 p2) {
     return ((p0.x - p1.x)*(p0.y - p2.y) - (p0.x - p2.x)*(p0.y - p1.y)) / 2;
 }
 
 //local numbering
-float K_ij(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, int i, int j) {
-    glm::vec2 grads[] = {{p1.y - p2.y, p2.x - p1.x},
+double K_ij(glm::dvec2 p0, glm::dvec2 p1, glm::dvec2 p2, int i, int j) {
+    glm::dvec2 grads[] = {{p1.y - p2.y, p2.x - p1.x},
                          {p2.y - p0.y, p0.x - p2.x},
                          {p0.y - p1.y, p1.x - p0.x}};
     return glm::dot(grads[i], grads[j]) / (4 * triangle_area(p0,p1,p2));
 }
 
 //edge-midpoint approximation
-float F_i(glm::vec2 p1, glm::vec2 p2, glm::vec2 p3, float (*function)(float, float), int i) {
-    const glm::vec2 e12 = (p1 + p2) * 0.5f;
-    const glm::vec2 e13 = (p1 + p3) * 0.5f;
-    const glm::vec2 e23 = (p2 + p3) * 0.5f;
-    glm::vec3 w;
+double F_i(glm::dvec2 p1, glm::dvec2 p2, glm::dvec2 p3, double (*function)(double, double), int i) {
+    const glm::dvec2 e12 = (p1 + p2) * 0.5;
+    const glm::dvec2 e13 = (p1 + p3) * 0.5;
+    const glm::dvec2 e23 = (p2 + p3) * 0.5;
+    glm::dvec3 w;
     switch(i) {
         case 0:
-            w = {0.5f, 0.5f, 0.0f};
+            w = {0.5, 0.5, 0.0};
             break;
         case 1:
-            w = {0.5f, 0.0f, 0.5f};
+            w = {0.5, 0.0, 0.5};
             break;
         case 2:
-            w = {0.0f, 0.5f, 0.5f};
+            w = {0.0, 0.5, 0.5};
             break;
         default:
             printf("Got %d insted of 0,1 or 2 as local coordinate!\n", i);
             assert(false);
     }
 
-    const float total = function(e12.x, e12.y) * w.x
+    const double total = function(e12.x, e12.y) * w.x
         + function(e13.x, e13.y) * w.y
         + function(e23.x, e23.y) * w.z;
     return (total / 3) * triangle_area(p1, p2, p3);
@@ -50,14 +48,11 @@ SquareMatrix::SquareMatrix() : rows(){
 }
 
 SquareMatrix::SquareMatrix(unsigned int rowCapacity) : rows(rowCapacity) {
-    for(int i = 0; i < rowCapacity; i++) {
-        rows.emplace_back(std::vector<unsigned int>(), std::vector<float>());
-    }
 }
 
-void SquareMatrix::put(unsigned int row, unsigned int col, float val) {
+void SquareMatrix::put(unsigned int row, unsigned int col, double val) {
     auto *indices = &this->rows[row].indices;
-    auto *values = &this->rows[row].indices;
+    auto *values = &this->rows[row].values;
 
     auto newpos = std::lower_bound(rows[row].indices.begin(), rows[row].indices.end(), col);
     auto index = std::distance(rows[row].indices.begin(), newpos);
@@ -75,12 +70,12 @@ void SquareMatrix::put(unsigned int row, unsigned int col, float val) {
     }
 }
 
-std::pair<SquareMatrix, std::vector<float>> Solver::assemble(const FemMesh &mesh, float (*function)(float, float)) {
+std::pair<SquareMatrix, std::vector<double>> Solver::assemble(const FemMesh &mesh, double (*function)(double, double)) {
     const int sideLen = mesh.activeNodes.size();
     const int elementCount = mesh.elems.size();
 
     auto global_K = SquareMatrix(sideLen);
-    auto global_F = std::vector<float>(sideLen, 0.0);
+    auto global_F = std::vector<double>(sideLen, 0.0);
 
 
     for(int el_ind = 0; el_ind < elementCount; el_ind++) {
@@ -124,7 +119,7 @@ std::pair<SquareMatrix, std::vector<float>> Solver::assemble(const FemMesh &mesh
 }
 
 
-float aTbProd(const std::vector<float> &a, const AssembledRow &row) {
+double aTbProd(const std::vector<double> &a, const AssembledRow &row) {
 
     if(row.indices.size() != row.indices.size()) {
         printf("indices and values diverge; with: indices.size: %zu, values.size: %zu", row.indices.size(), row.values.size());
@@ -132,7 +127,7 @@ float aTbProd(const std::vector<float> &a, const AssembledRow &row) {
     }
 
     const unsigned int nnz = row.values.size();
-    float res = 0.0;
+    double res = 0.0;
 
     for(int i = 0; i < nnz; i++) {
         res += a[row.indices[i]] * row.values[i];
@@ -141,10 +136,10 @@ float aTbProd(const std::vector<float> &a, const AssembledRow &row) {
 }
 
 //assume the matrix is square with sides equal to the length of the vector a_T@M@b
-float aTMbProd(const std::vector<float> &a, const SquareMatrix &M, const std::vector<float> &b) {
+double aTMbProd(const std::vector<double> &a, const SquareMatrix &M, const std::vector<double> &b) {
     const unsigned int len = a.size();
-    float res = 0.0;
-    float acc = 0.0;
+    double res = 0.0;
+    double acc = 0.0;
 
     for(int i = 0; i < len; i++) {
         res += a[i]*aTbProd(b, M.rows[i]);
@@ -152,9 +147,9 @@ float aTMbProd(const std::vector<float> &a, const SquareMatrix &M, const std::ve
     return res;
 }
 
-float aTbProd(const std::vector<float> &a, const std::vector<float> &b) {
+double aTbProd(const std::vector<double> &a, const std::vector<double> &b) {
     const unsigned int len = a.size();
-    float res = 0.0;
+    double res = 0.0;
 
     for(int i = 0; i < len; i++) {
         res += a[i] * b[i];
@@ -162,19 +157,19 @@ float aTbProd(const std::vector<float> &a, const std::vector<float> &b) {
     return res;
 }
 
-std::vector<float> CG(const SquareMatrix &M, std::vector<float> &F) {
-    std::vector<float> x(F.size(), 0.0);
+std::vector<double> CG(const SquareMatrix &M, std::vector<double> &F) {
+    std::vector<double> x(F.size(), 0.0);
 
-    std::vector<float> r(F);
-    std::vector<float> p(F);
+    std::vector<double> r(F);
+    std::vector<double> p(F);
 
-    float alpha = 0.0;
-    float beta = 0.0;
+    double alpha = 0.0;
+    double beta = 0.0;
 
     const unsigned int len = F.size();
 
-    float rTr = aTbProd(r, r);
-    float rTr_n = 0.0;
+    double rTr = aTbProd(r, r);
+    double rTr_n = 0.0;
 
     for(int k = 0; k < len; k++) {
         alpha = rTr / aTMbProd(p, M, p);
@@ -215,11 +210,11 @@ void printSquareMat(const SquareMatrix &M) {
     }
 }
 
-std::vector<float> Solver::solve(const FemMesh &m, float (*function)(float, float)) {
+std::vector<double> Solver::solve(const FemMesh &m, double (*function)(double, double)) {
     auto K_F = assemble(m, function);
     printf("assembled!\n");
     SquareMatrix K = K_F.first;
-    std::vector<float> F = K_F.second;
+    std::vector<double> F = K_F.second;
 
     return CG(K, F);
 }

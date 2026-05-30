@@ -1,18 +1,20 @@
 #include "quadedge.h"
-#include <glm/ext/vector_float2.hpp>
+#include <glm/ext/scalar_constants.hpp>
+#include <glm/ext/vector_double2.hpp>
+#include <glm/matrix.hpp>
 #include <utility>
-
+#include <algorithm>
 
 Edge* Edge::sym() {
-    return (index < 2) ? (this + 2) : (this - 2); 
+    return (localIndex < 2) ? (this + 2) : (this - 2); 
 }
 
 Edge* Edge::rotCCW() {
-    return (index < 3) ? (this + 1) : (this - 3);
+    return (localIndex < 3) ? (this + 1) : (this - 3);
 }
 
 Edge* Edge::rotCW() {
-    return (index > 1) ? (this - 1) : (this + 3);
+    return (localIndex > 0) ? (this - 1) : (this + 3);
 }
 
 Edge* Edge::Onext() {
@@ -57,13 +59,18 @@ Edge* QuadEdge::makeEdge() {
 }
 
 void QuadEdge::splice(Edge *a, Edge *b) {
-    Edge *tmp = a->Onext()->rotCCW()->Onext();
-    a->Onext()->rotCCW()->setOnext(b->Onext()->rotCCW()->Onext());
-    b->Onext()->rotCCW()->setOnext(tmp);
+	Edge* alpha = a->Onext()->rotCCW();
+	Edge* beta = b->Onext()->rotCCW();
 
-    tmp = a->Onext();
-    a->setOnext(b->Onext());
-    b->setOnext(tmp);
+	Edge* t1 = b->Onext();
+	Edge* t2 = a->Onext();
+	Edge* t3 = beta->Onext();
+	Edge* t4 = alpha->Onext();
+
+	a->setOnext(t1);
+	b->setOnext(t2);
+	alpha->setOnext(t3);
+	beta->setOnext(t4);
 }
 
 void Edge::setOrig(int orig) {
@@ -78,6 +85,9 @@ int Edge::orig() {
 }
 int Edge::dest() {
     return sym()->orig();
+}
+int Edge::index() {
+    return localIndex;
 }
 
 Edge* QuadEdge::connect(Edge *a, Edge *b) {
@@ -98,6 +108,13 @@ void QuadEdge::deleteEdge(Edge *e) {
 
     e->setOrig(-1);
     e->setDest(-1);
+
+    EdgeRecord* raw = (EdgeRecord*)(e - (e->index()));
+    auto pos = std::find(edgeRecords.begin(), edgeRecords.end(), raw);
+
+    if(pos != edgeRecords.end()) {
+        edgeRecords.erase( pos);
+    }
 }
 
 void QuadEdge::swap(Edge *e) {
@@ -113,33 +130,33 @@ void QuadEdge::swap(Edge *e) {
     e->setDest(b->dest());
 }
 
-float triangleDet(glm::vec2 a, glm::vec2 b, glm::vec2 c) {
+double triangleDet(glm::dvec2 a, glm::dvec2 b, glm::dvec2 c) {
     return ((a.x - b.x)*(a.y - c.y) - (a.x - c.x)*(a.y - b.y));
 }
 
-bool CCW(glm::vec2 a, glm::vec2 b, glm::vec2 c) {
-    return triangleDet(a, b, c) > 0;
+bool CCW(glm::dvec2 a, glm::dvec2 b, glm::dvec2 c) {
+    return triangleDet(a, b, c) > glm::epsilon<float>();
 }
 
-float inCircle(glm::vec2 a, glm::vec2 b, glm::vec2 c, glm::vec2 t) {
-    const float a_sq = a.x*a.x + a.y*a.y;
-    const float b_sq = b.x*b.x + b.y*b.y;
-    const float c_sq = c.x*c.x + c.y*c.y;
-    const float t_sq = t.x*t.x + t.y*t.y;
+double inCircle(glm::dvec2 a, glm::dvec2 b, glm::dvec2 c, glm::dvec2 t) {
+    const long double a_sq = a.x*a.x + a.y*a.y;
+    const long double b_sq = b.x*b.x + b.y*b.y;
+    const long double c_sq = c.x*c.x + c.y*c.y;
+    const long double t_sq = t.x*t.x + t.y*t.y;
 
-    const float det0 = a_sq * triangleDet(b, c, t);
-    const float det1 = b_sq * triangleDet(a, c, t);
-    const float det2 = c_sq * triangleDet(a, b, t);
-    const float det3 = t_sq * triangleDet(a, b, c);
+    const long double det0 = a_sq * triangleDet(b, c, t);
+    const long double det1 = b_sq * triangleDet(a, c, t);
+    const long double det2 = c_sq * triangleDet(a, b, t);
+    const long double det3 = t_sq * triangleDet(a, b, c);
 
-    return det0 - det1 + det2 - det3;
+    return (det0 - det1 + det2 - det3) > glm::epsilon<float>();
 }
 
-bool QuadEdge::rightOf(Edge *e, glm::vec2 p) {
+bool QuadEdge::rightOf(Edge *e, glm::dvec2 p) {
     return CCW(p, destOf(e).position, origOf(e).position);
 }
 
-bool QuadEdge::leftOf(Edge *e, glm::vec2 p) {
+bool QuadEdge::leftOf(Edge *e, glm::dvec2 p) {
     return CCW(p, origOf(e).position, destOf(e).position);
 }
 
@@ -200,7 +217,7 @@ std::pair<Edge*, Edge*> QuadEdge::delaunay(unsigned int *nodes, int size) {
     auto ldi = ldo_ldi.second;
     auto ldo = ldo_ldi.first;
 
-    auto rdo_rdi = delaunay(nodes + size / 2, size - size / 2);
+    auto rdo_rdi = delaunay(nodes + (size / 2), size - (size / 2));
     auto rdi = rdo_rdi.first;
     auto rdo = rdo_rdi.second;
 
@@ -227,7 +244,7 @@ std::pair<Edge*, Edge*> QuadEdge::delaunay(unsigned int *nodes, int size) {
     while(true) {
         lcand = basel->sym()->Onext();
         if(isValid(lcand, basel)) {
-            while(inCircle(destOf(basel).position, origOf(basel).position, destOf(lcand).position, destOf(lcand->Onext()).position) > 0) {
+            while(inCircle(destOf(basel).position, origOf(basel).position, destOf(lcand).position, destOf(lcand->Onext()).position)) {
                 Edge *tmp = lcand->Onext();
                 deleteEdge(lcand);
                 lcand = tmp;
@@ -236,7 +253,7 @@ std::pair<Edge*, Edge*> QuadEdge::delaunay(unsigned int *nodes, int size) {
 
         rcand = basel->Oprev();
         if(isValid(rcand, basel)) {
-            while(inCircle(destOf(basel).position, origOf(basel).position, destOf(rcand).position, destOf(rcand->Oprev()).position) > 0) {
+            while(inCircle(destOf(basel).position, origOf(basel).position, destOf(rcand).position, destOf(rcand->Oprev()).position)) {
                 Edge *tmp = rcand->Oprev();
                 deleteEdge(rcand);
                 rcand = tmp;
@@ -248,10 +265,9 @@ std::pair<Edge*, Edge*> QuadEdge::delaunay(unsigned int *nodes, int size) {
 
         if(!rcandValid && !lcandValid) {
             break;
-        }
 
-        if(!lcandValid || (rcandValid &&
-                    inCircle(destOf(lcand).position, origOf(lcand).position, origOf(rcand).position, destOf(rcand).position) > 0)) {
+        } else if(!lcandValid || (rcandValid &&
+                    inCircle(destOf(lcand).position, origOf(lcand).position, origOf(rcand).position, destOf(rcand).position))) {
             basel = connect(rcand, basel->sym());
         } else {
             basel = connect(basel->sym(), lcand->sym());
