@@ -11,7 +11,7 @@ void FemMesh::setupFE(std::vector<unsigned int> elementIndices) {
 }
 
 FemMesh::FemMesh(std::shared_ptr<std::vector<Node>> nodes, std::vector<unsigned int> elementIndices) :
-    activeNodes(), passiveNodes(), nodeIndexMap() 
+    activeNodes(), passiveNodes(), nodeIndexMap(), nodes(nodes)
 {
     for(unsigned int i = 0; i < nodes->size(); i++) {
         switch(nodes->at(i).type) {
@@ -25,8 +25,8 @@ FemMesh::FemMesh(std::shared_ptr<std::vector<Node>> nodes, std::vector<unsigned 
                 passiveNodes.push_back(i);
                 break;
         }
-        this->nodes->push_back(nodes->at(i));
     }
+
 
     for(int i = 0; i < elementIndices.size(); i+=3) {
         glm::uvec3 indices = {nodeIndexMap[elementIndices[i]], nodeIndexMap[elementIndices[i+1]], nodeIndexMap[elementIndices[i+2]]};

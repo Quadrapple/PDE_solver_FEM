@@ -93,7 +93,7 @@ int Edge::index() {
 Edge* QuadEdge::connect(Edge *a, Edge *b) {
     Edge *e = makeEdge();
 
-    printf("connected %d and %d\n", a->dest(), b->orig());
+//  printf("connected %d and %d\n", a->dest(), b->orig());
     e->setOrig(a->dest());
     e->setDest(b->orig());
 
@@ -188,18 +188,18 @@ std::pair<Edge*, Edge*> QuadEdge::makeTriangle(unsigned int aInd, unsigned int b
 
     if(CCW(nodes->at(aInd).position, nodes->at(bInd).position, nodes->at(cInd).position)) {
 
-        printf("triangle %d, %d, %d\n", aInd, bInd, cInd);
+//      printf("triangle %d, %d, %d\n", aInd, bInd, cInd);
         e_ac = connect(e_bc, e_ab);
         return std::make_pair(e_ab, e_bc->sym());
 
     } else if(CCW(nodes->at(aInd).position, nodes->at(cInd).position, nodes->at(bInd).position)) {
 
-        printf("triangle %d, %d, %d\n", aInd, cInd, bInd);
+//      printf("triangle %d, %d, %d\n", aInd, cInd, bInd);
         e_ac = connect(e_bc, e_ab);
         return std::make_pair(e_ac->sym(), e_ac);
 
     } else {
-        printf("colinear\n");
+//      printf("colinear\n");
         return std::make_pair(e_ab, e_bc->sym());
     }
 }

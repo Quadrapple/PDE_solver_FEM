@@ -93,5 +93,5 @@ void KDTree::putall(std::shared_ptr<std::vector<Node>> nodes) {
     std::stable_sort(root->array.begin(), root->array.end(),
             [this] (const unsigned int &a, const unsigned int &b) { return this->compareX(a,b); } );
     root->putall(0, maxsize);
-    root->print();
+//  root->print();
 }

@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstdlib>
+#include <deque>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
@@ -8,7 +9,6 @@
 #include <glm/ext/scalar_constants.hpp>
 #include <glm/geometric.hpp>
 #include <glm/trigonometric.hpp>
-#include <iostream>
 #include <list>
 #include <stdio.h>
 
@@ -95,7 +95,7 @@ struct Adjacency {
 std::shared_ptr<std::vector<Node>> demoTriangleMesh(int size, float (*u)(float, float)) {
     auto nodes = std::make_shared<std::vector<Node>>();
     
-    const double range = 10.0; 
+    const double range = 0.8; 
     double delta = range / (float)size;
 
     std::vector<std::list<unsigned int>> adj; // adjacencies
@@ -128,7 +128,7 @@ std::shared_ptr<std::vector<Node>> demoTriangleMesh(int size, float (*u)(float, 
     for(int x = -size + 1; x <= size - 1; x++) {
         for(int y = -size + 1; y <= size - 1; y++) {
             Node v = {{x*delta , y*delta}, active, 0.0f};
-            v.position += glm::vec2{ ((double)rand() / RAND_MAX - 0.5) * (delta/10), (double)rand() / RAND_MAX * (delta/2) };
+            v.position += glm::vec2{ ((double)rand() / RAND_MAX - 0.5) * (delta/10), (double)rand() / RAND_MAX * (delta/10) };
             nodes->push_back(v);
         }
     }
@@ -138,11 +138,57 @@ std::shared_ptr<std::vector<Node>> demoTriangleMesh(int size, float (*u)(float, 
     return std::move(nodes);
 }
 
-
-std::unique_ptr<FemMesh> genFEM(std::shared_ptr<std::vector<Node>> nodes, float (*u)(float, float)) {
-    return nullptr;
+bool notDegenerate(glm::dvec2 a, glm::dvec2 b, glm::dvec2 c) {
+    return ((a.x - b.x)*(a.y - c.y) - (a.x - c.x)*(a.y - b.y)) != 0;
 }
 
+//bfs over the dual graph
+std::vector<unsigned int> genElements(const QuadEdge &q) {
+    std::vector<unsigned int> indices;
+    std::deque<Edge*> searchfront;
+
+    Edge *start = q.edgeRecords[0]->edges[0].rotCW();
+    searchfront.push_front(start);
+
+    int limiter = 0;
+    while(!searchfront.empty() && limiter < 2*q.edgeRecords.size()) {
+        //get dual
+        unsigned int buf[3];
+
+        Edge *e = searchfront.back();
+        searchfront.pop_back();
+        Edge *first = e->Onext();
+
+        for(int i = 0; i < 3; i++) {
+            buf[i] = e->rotCCW()->orig();
+            e = e->Onext();
+        }
+
+        if(e->Onext() == first &&
+                notDegenerate(q.nodes->at(buf[0]).position, q.nodes->at(buf[1]).position, q.nodes->at(buf[2]).position)) {
+
+            indices.push_back(buf[0]);
+            indices.push_back(buf[1]);
+            indices.push_back(buf[2]);
+        }
+        e->setOrig(-2);
+
+        Edge *erNext = e->sym();
+        first = erNext;
+
+        while(erNext->orig() >= 0) {
+            searchfront.push_front(erNext);
+            erNext->setOrig(-1);
+
+            erNext = erNext->sym()->Onext()->sym();
+            if(erNext == first) {
+                break;
+            }
+        }
+        limiter++;
+    }
+    return indices;
+}
 
 glm::vec3 interpolate3(float val, glm::vec3 first, glm::vec3 second, glm::vec3 third) {
     return glm::max(1.0f - glm::abs(val), 0.0f) * second
@@ -150,9 +196,31 @@ glm::vec3 interpolate3(float val, glm::vec3 first, glm::vec3 second, glm::vec3 t
                 + glm::max(1.0f - glm::abs(val - 1.0f), 0.0f) * third;
 }
 
-VertexArray visTriangulation(const std::unique_ptr<QuadEdge> &qu) {
+VertexArray visTriangulation(std::vector<unsigned int> &mIndices, const std::vector<Node> &nodes) {
     std::vector<mVertex> mVertices;
-    std::vector<unsigned int> mIndices;
+
+//  glm::vec3 colors[] = {{1.0, 0.1, 0.1}, {0.1, 1.0, 0.1}, {0.1, 0.1, 1.0}, 
+//                          {0.5, 0.0, 0.0}, {0.0, 0.5, 0.0}, {0.0, 0.0, 0.5}};
+
+    for(const Node &n : nodes) {
+        mVertices.push_back({n.position, {1.0, 1.0, 1.0}});
+    }
+
+    VertexArray triangleMesh;
+    triangleMesh.bind();
+    triangleMesh.setVertices(std::make_unique<Buffer>(GL_ARRAY_BUFFER, mVertices.size() * sizeof(mVertex), mVertices.data()));
+    triangleMesh.setIndices(std::make_unique<Buffer>(GL_ELEMENT_ARRAY_BUFFER, mIndices.size() * sizeof(unsigned int), mIndices.data()));
+
+    triangleMesh.indexCount = mIndices.size();
+    triangleMesh.vertexCount = mVertices.size();
+    triangleMesh.addAttrib(VertexAttrib{2, sizeof(mVertex), GL_FLOAT, (void*)offsetof(mVertex, pos)});
+    triangleMesh.addAttrib(VertexAttrib{3, sizeof(mVertex), GL_FLOAT, (void*)offsetof(mVertex, color)});
+    return triangleMesh;
+}
+
+/*
+VertexArray visEdges(const QuadEdge &q) {
+    std::vector<mVertex> mVertices;
 
 //  glm::vec3 colors[] = {{1.0, 0.1, 0.1}, {0.1, 1.0, 0.1}, {0.1, 0.1, 1.0}, 
 //                          {0.5, 0.0, 0.0}, {0.0, 0.5, 0.0}, {0.0, 0.0, 0.5}};
@@ -171,15 +239,17 @@ VertexArray visTriangulation(const std::unique_ptr<QuadEdge> &qu) {
     VertexArray triangleMesh;
     triangleMesh.bind();
     triangleMesh.setVertices(std::make_unique<Buffer>(GL_ARRAY_BUFFER, mVertices.size() * sizeof(mVertex), mVertices.data()));
+    triangleMesh.setIndices(std::make_unique<Buffer>(GL_ELEMENT_ARRAY_BUFFER, mIndices.size() * sizeof(unsigned int), mIndices.data()));
 
+    triangleMesh.indexCount = mIndices.size();
     triangleMesh.vertexCount = mVertices.size();
     triangleMesh.addAttrib(VertexAttrib{2, sizeof(mVertex), GL_FLOAT, (void*)offsetof(mVertex, pos)});
     triangleMesh.addAttrib(VertexAttrib{3, sizeof(mVertex), GL_FLOAT, (void*)offsetof(mVertex, color)});
     return triangleMesh;
 }
+*/
 
-/*
-VertexArray demoTriangleMeshGr(const std::unique_ptr<FemMesh> &femmesh, int size, const std::vector<float> &colors) {
+VertexArray demoTriangleMeshGr(const std::unique_ptr<FemMesh> &femmesh, int size, const std::vector<double> &colors) {
     std::vector<mVertex> mVertices;
     std::vector<unsigned int> mIndices;
 
@@ -191,7 +261,7 @@ VertexArray demoTriangleMeshGr(const std::unique_ptr<FemMesh> &femmesh, int size
 
 
     float max = 0;
-    for(auto node: femmesh->nodes) {
+    for(auto node: *femmesh->nodes) {
         if(glm::abs(node.value) > max) {
             max = glm::abs(node.value);
         }
@@ -203,10 +273,10 @@ VertexArray demoTriangleMeshGr(const std::unique_ptr<FemMesh> &femmesh, int size
 
     for(int i = 0; i < doublesize; i++) {
         for(int j = 0; j < doublesize; j++) {
-            float colorVal = glm::atan(femmesh->nodes[doublesize * i + j].value / max);
+            float colorVal = glm::atan(femmesh->nodes->at(doublesize * i + j).value / max);
             glm::vec3 color = glm::pow(interpolate3(colorVal, lowColor, midColor, highColor), glm::vec3(1.25f));
 
-            mVertex v = {femmesh->nodes[doublesize * i + j].position, color};
+            mVertex v = {femmesh->nodes->at(doublesize * i + j).position, color};
             mVertices.push_back(v);
         }
     }
@@ -227,9 +297,8 @@ VertexArray demoTriangleMeshGr(const std::unique_ptr<FemMesh> &femmesh, int size
     triangleMesh.addAttrib(VertexAttrib{3, sizeof(mVertex), GL_FLOAT, (void*)offsetof(mVertex, color)});
     return triangleMesh;
 }
-*/
 
-float f(float x, float y) {
+double f(double x, double y) {
     return x*40;
 }
 
@@ -244,13 +313,12 @@ int main(int argc, char* argv[]) {
     ctx->disable(GL_DEPTH_TEST);
 
     int g = rand();
-    const int size = 7;
+    const int size = 12;
 
     auto nodes = demoTriangleMesh(size, u);
     printf("nodes size %zu\n", nodes->size());
 
     auto qedge = std::make_unique<QuadEdge>(nodes);
-    printf("created quadedge\n");
     auto qtree = std::make_unique<KDTree>();
     qtree->putall(nodes);
 
@@ -267,10 +335,11 @@ int main(int argc, char* argv[]) {
                 [&qtree] (const unsigned int &a, const unsigned int &b) { return qtree->compareX(a,b); } );
 
     qedge->delaunay(ind.data(), ind.size());
-    printf("triangulated\n");
 
-    /*
-    auto fTriangles = demoTriangleMesh(size, u);
+    auto els = genElements(*qedge);
+
+    printf("genned elements\n");
+    auto fTriangles = std::make_unique<FemMesh>(nodes, els);
     Solver solver;
 
     printf("Solving...\n");
@@ -279,14 +348,11 @@ int main(int argc, char* argv[]) {
     printf("Solved! colors.size %zu\n", colors.size());
 
     for(int i = 0; i < fTriangles->activeNodes.size(); i++) {
-        fTriangles->nodes[fTriangles->activeNodes[i]].value = colors[i];
+        fTriangles->nodes->at(fTriangles->activeNodes[i]).value = colors[i];
     }
     printf("assigned colors\n");
 
     VertexArray triangle = demoTriangleMeshGr(fTriangles, size, colors);
-    */
-
-    VertexArray triangle = visTriangulation(qedge);
 
     printf("created triangle\n");
     glfwSwapInterval(1);
@@ -305,18 +371,18 @@ int main(int argc, char* argv[]) {
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-//      color.use();
-//      glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-//      glDrawElements(GL_TRIANGLES, triangle.indexCount, GL_UNSIGNED_INT, 0);
+        color.use();
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        glDrawElements(GL_TRIANGLES, triangle.indexCount, GL_UNSIGNED_INT, 0);
 
-        whiteLines.use();
-        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-        glDrawArrays(GL_LINES, 0, triangle.vertexCount);
+//      whiteLines.use();
+//      glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+//      glDrawArrays(GL_LINES, 0, triangle.vertexCount);
 //      glDrawElements(GL_TRIANGLES, triangle.indexCount, GL_UNSIGNED_INT, 0);
 
         //Draw points
-        point.use();
-        glDrawArrays(GL_POINTS, 0, triangle.vertexCount);
+//      point.use();
+//      glDrawArrays(GL_POINTS, 0, triangle.vertexCount);
 //      glDrawElements(GL_POINTS, triangle.indexCount, GL_UNSIGNED_INT, 0);
 
         ctx->bindVertexArray(0);
