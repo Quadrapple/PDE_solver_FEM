@@ -35,7 +35,6 @@ class KDTree {
         std::shared_ptr<std::vector<Node>> nodes;
         std::unique_ptr<KDtreeQuad> root;
 
-        bool compareX(const unsigned int &a, const unsigned int &b) const;
-        bool compareY(const unsigned int &a, const unsigned int &b) const;
+        Node getSurroinding(glm::dvec2 position);
     private:
 };

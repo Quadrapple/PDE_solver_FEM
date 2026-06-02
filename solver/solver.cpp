@@ -1,9 +1,11 @@
 #include "solver.h"
 #include "femmesh.h"
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <glm/common.hpp>
 #include <iterator>
+#include <ratio>
 
 double triangle_area(glm::dvec2 p0, glm::dvec2 p1, glm::dvec2 p2) {
     return ((p0.x - p1.x)*(p0.y - p2.y) - (p0.x - p2.x)*(p0.y - p1.y)) / 2;
@@ -51,20 +53,20 @@ SquareMatrix::SquareMatrix(unsigned int rowCapacity) : rows(rowCapacity) {
 }
 
 void SquareMatrix::put(unsigned int row, unsigned int col, double val) {
-    auto *indices = &this->rows[row].indices;
-    auto *values = &this->rows[row].values;
+    auto &indices = this->rows[row].indices;
+    auto &values = this->rows[row].values;
 
-    auto newpos = std::lower_bound(rows[row].indices.begin(), rows[row].indices.end(), col);
-    auto index = std::distance(rows[row].indices.begin(), newpos);
+    auto newpos = std::lower_bound(indices.begin(), indices.end(), col);
+    auto index = std::distance(indices.begin(), newpos);
 
-    rows[row].indices.insert(newpos, col);
-    rows[row].values.insert(rows[row].values.begin() + index, val);
-
-    if(row == 1) {
-//      printf("put(..) reached!\n");
-//      printf("row: %d, col: %d; indices.size: %zu, values.size: %zu\n", row, col, rows[row].indices.size(), rows[row].values.size());
+    if(newpos == indices.end() || *newpos.base() != col) {
+        indices.insert(newpos, col);
+        values.insert(values.begin() + index, val);
+    } else {
+        values[index] += val;
     }
-    if(rows[row].indices.size() != rows[row].values.size()) {
+
+    if(indices.size() != values.size()) {
         printf("indices and values diverge at row: %d, col: %d; with: indices.size: %zu, values.size: %zu", row, col, rows[row].indices.size(), rows[row].values.size());
         exit(0);
     }
@@ -78,13 +80,13 @@ std::pair<SquareMatrix, std::vector<double>> Solver::assemble(const FemMesh &mes
     auto global_F = std::vector<double>(sideLen, 0.0);
 
 
-    for(int el_ind = 0; el_ind < elementCount; el_ind++) {
-        FiniteElement el = mesh.elems[el_ind];
+    for(int elInd = 0; elInd < elementCount; elInd++) {
+        FiniteElement el = mesh.elems[elInd];
         //printf("element %d with %d, %d, %d!\n", el_ind, el.nodes[0], el.nodes[1], el.nodes[2]);
 
-        Node n0 = mesh.nodeOfElement(el_ind, 0);
-        Node n1 = mesh.nodeOfElement(el_ind, 1);
-        Node n2 = mesh.nodeOfElement(el_ind, 2);
+        Node n0 = mesh.nodeOfElement(elInd, 0);
+        Node n1 = mesh.nodeOfElement(elInd, 1);
+        Node n2 = mesh.nodeOfElement(elInd, 2);
         Node nodes[3] = {n0, n1, n2};
 
 
@@ -95,7 +97,7 @@ std::pair<SquareMatrix, std::vector<double>> Solver::assemble(const FemMesh &mes
                 case neumann:
                     node_I = el.nodes[i];
 
-                    global_F[node_I] += F_i(n0.position, n1.position, n2.position, function, i);
+                    global_F[node_I] -= F_i(n0.position, n1.position, n2.position, function, i);
 
                     for(int j = 0; j < 3; j++) {
                         unsigned int node_J = el.nodes[j];
@@ -157,7 +159,7 @@ double aTbProd(const std::vector<double> &a, const std::vector<double> &b) {
     return res;
 }
 
-std::vector<double> CG(const SquareMatrix &M, std::vector<double> &F) {
+std::vector<double> CG(const SquareMatrix &M, const std::vector<double> &F) {
     std::vector<double> x(F.size(), 0.0);
 
     std::vector<double> r(F);
@@ -198,6 +200,50 @@ std::vector<double> CG(const SquareMatrix &M, std::vector<double> &F) {
     return x;
 }
 
+
+std::vector<double> Solver::estimateError(const FemMesh &mesh, const std::vector<double> &solution, double h, double (*f)(double, double)) {
+    glm::dvec2 dx, dy, ndx, ndy, o;
+    double dx_val, dy_val, ndx_val, ndy_val, o_val;
+
+    std::vector<double> estimates;
+    estimates.reserve(mesh.activeNodes.size());
+
+    for(auto activeInd : mesh.activeNodes) {
+        o = mesh.nodes->at(activeInd).position;
+
+        dx = {o.x + h, o.y};
+        ndx = {o.x - h, o.y};
+        dy = {o.x, o.y + h};
+        ndy = {o.x, o.y - h};
+        
+        dx_val = mesh.evaluate(solution, dx);
+        dy_val = mesh.evaluate(solution, dy);
+        ndx_val = mesh.evaluate(solution, ndx);
+        ndy_val = mesh.evaluate(solution, ndy);
+        o_val = mesh.evaluate(solution, o);
+
+        if(std::isnan(dx_val) || 
+                std::isnan(dy_val) ||
+                std::isnan(ndx_val) ||
+                std::isnan(ndy_val) ||
+                std::isnan(o_val)) {
+            estimates.push_back(0);
+            printf("nan!\n");
+            continue;
+        }
+
+        //estimate laplacian
+        double estVal = (dx_val + dy_val + ndx_val + ndy_val - 4 * o_val) / (h*h);
+
+        printf("(%f, %f): estval: %f, f: %f, \nwith dx: %f, dy: %f, ndx: %f, ndy: %f, o: %f\n", o.x, o.y, estVal, f(o.x, o.y),
+                dx_val, dy_val, ndx_val, ndy_val, o_val);
+
+        estimates.push_back(glm::abs(estVal - f(o.x, o.y)));
+    }
+
+    return estimates;
+}
+
 void printSquareMat(const SquareMatrix &M) {
     for(auto row : M.rows) {
         printf("%zu: ", row.indices.size());
@@ -215,6 +261,7 @@ std::vector<double> Solver::solve(const FemMesh &m, double (*function)(double, d
     printf("assembled!\n");
     SquareMatrix K = K_F.first;
     std::vector<double> F = K_F.second;
+    std::vector<double> solution = CG(K, F);
 
-    return CG(K, F);
+    return solution;
 }

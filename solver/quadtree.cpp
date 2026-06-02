@@ -4,13 +4,6 @@
 #include <memory>
 #include <random>
 
-bool KDTree::compareX(const unsigned int &a, const unsigned int &b) const {
-    return nodes->at(a).position.x < nodes->at(b).position.x;
-}
-
-bool KDTree::compareY(const unsigned int &a, const unsigned int &b) const {
-    return nodes->at(a).position.y < nodes->at(b).position.y;
-}
 
 KDtreeQuad::KDtreeQuad(const KDTree *parent) : hi(nullptr), lo(nullptr), array(), parent(parent), full(false) {
 }
@@ -80,6 +73,22 @@ void KDtreeQuad::putall(int depth, int maxlen) {
     lo->putall(depth + 1, maxlen);
 }
 
+static auto compareXY(const std::vector<Node> &nodes) {
+    return [&nodes] (const unsigned int &a, const unsigned int &b) {
+        glm::dvec2 aval = nodes.at(a).position;
+        glm::dvec2 bval = nodes.at(b).position;
+
+        if(aval.x < bval.x) {
+            return true;
+        } else if(aval.x > bval.x) {
+            return false;
+        } else {
+            return aval.y < bval.y;
+        }
+    };
+}
+
+
 void KDTree::putall(std::shared_ptr<std::vector<Node>> nodes) {
     this->nodes = nodes;
     root = std::make_unique<KDtreeQuad>(this);
@@ -88,10 +97,6 @@ void KDTree::putall(std::shared_ptr<std::vector<Node>> nodes) {
         root->array.push_back(i);
     }
 
-    std::sort(root->array.begin(), root->array.end(),
-            [this] (const unsigned int &a, const unsigned int &b) { return this->compareY(a,b); } );
-    std::stable_sort(root->array.begin(), root->array.end(),
-            [this] (const unsigned int &a, const unsigned int &b) { return this->compareX(a,b); } );
+    std::sort(root->array.begin(), root->array.end(), compareXY(*nodes) );
     root->putall(0, maxsize);
-//  root->print();
 }

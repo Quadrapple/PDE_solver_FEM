@@ -1,8 +1,11 @@
 #pragma once
 
+#include "bbhierarchy.h"
 #include <glm/glm.hpp>
 #include <memory>
 #include <vector>
+
+class BBHierarchy;
 
 enum NodeType {
     active, neumann, dirichlet
@@ -39,13 +42,26 @@ class FemMesh {
         FemMesh(std::shared_ptr<std::vector<Node>> nodes, std::vector<unsigned int> elementIndices);
 
         Node nodeOfElement(int elIndex, int localNodeIndex) const;
+        glm::dvec2 barycenterOfElement(int elIndex) const;
+
+
         unsigned int indexOfNodeOfElement(int elIndex, int localNodeIndex) const;
         void setupFE(std::vector<unsigned int> indices);
+
+        bool pointInElem(unsigned int elInd, glm::dvec2 point) const;
+
+        double evaluate(const std::vector<double> &solution, glm::dvec2 point) const;
+
+        std::shared_ptr<std::vector<Node>> nodes;
         std::vector<unsigned int> activeNodes;
         std::vector<unsigned int> passiveNodes;
-        std::shared_ptr<std::vector<Node>> nodes;
 
+        // nodeindex -> index in passiveNodes or activeNodes
         std::vector<unsigned int> nodeIndexMap;
+
         std::vector<FiniteElement> elems;
+        std::vector<std::vector<unsigned int>> elemsOfNodes;
+
     private:
+        std::unique_ptr<BBHierarchy> elemBVH;
 };

@@ -12,7 +12,7 @@ add_executable(${PROJECT_NAME}
     general/graphics/buffer.cpp general/graphics/object.cpp general/graphics/render_target.cpp general/graphics/texture.cpp general/graphics/vao.cpp
     general/graphics/mesh.cpp general/graphics/model.cpp general/graphics/mesh.cpp
     general/graphics/shader/shader.cpp general/graphics/shader/shader_loader.cpp
-    solver/femmesh.cpp solver/solver.cpp solver/quadedge.cpp solver/quadtree.cpp)
+    solver/femmesh.cpp solver/solver.cpp solver/quadedge.cpp solver/quadtree.cpp solver/bbhierarchy.cpp)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC GL dl glfw)
 target_include_directories(${PROJECT_NAME} PUBLIC 
