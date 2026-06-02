@@ -201,15 +201,29 @@ std::vector<double> CG(const SquareMatrix &M, const std::vector<double> &F) {
 }
 
 
-std::vector<double> Solver::estimateError(const FemMesh &mesh, const std::vector<double> &solution, double h, double (*f)(double, double)) {
-    glm::dvec2 dx, dy, ndx, ndy, o;
-    double dx_val, dy_val, ndx_val, ndy_val, o_val;
+//TODO replace with grid
+std::vector<mVertex> Solver::estimateError(const FemMesh &mesh, const std::vector<double> &solution,
+        int size, double range, double (*f)(double, double), double h) {
 
-    std::vector<double> estimates;
+    std::vector<mVertex> estimates;
     estimates.reserve(mesh.activeNodes.size());
 
-    for(auto activeInd : mesh.activeNodes) {
-        o = mesh.nodes->at(activeInd).position;
+    if(h <= 0.0) {
+        h = range / (size + 0);
+    }
+
+    double d = range / size;
+    for(int x = -size; x <= size; x++) {
+        for(int y = -size; y <= size; y++) {
+            mVertex v = {{x*d , y*d}, {0.0,0.0,0.0}};
+            estimates.push_back(v);
+        }
+    }
+
+    glm::dvec2 dx, dy, ndx, ndy, o;
+    double dx_val, dy_val, ndx_val, ndy_val, o_val;
+    for(auto &est : estimates) {
+        o = (glm::dvec2)est.pos;
 
         dx = {o.x + h, o.y};
         ndx = {o.x - h, o.y};
@@ -227,18 +241,16 @@ std::vector<double> Solver::estimateError(const FemMesh &mesh, const std::vector
                 std::isnan(ndx_val) ||
                 std::isnan(ndy_val) ||
                 std::isnan(o_val)) {
-            estimates.push_back(0);
-            printf("nan!\n");
             continue;
         }
 
         //estimate laplacian
         double estVal = (dx_val + dy_val + ndx_val + ndy_val - 4 * o_val) / (h*h);
 
-        printf("(%f, %f): estval: %f, f: %f, \nwith dx: %f, dy: %f, ndx: %f, ndy: %f, o: %f\n", o.x, o.y, estVal, f(o.x, o.y),
-                dx_val, dy_val, ndx_val, ndy_val, o_val);
+//      printf("(%f, %f): estval: %f, f: %f, \nwith dx: %f, dy: %f, ndx: %f, ndy: %f, o: %f\n", o.x, o.y, estVal, f(o.x, o.y),
+//              dx_val, dy_val, ndx_val, ndy_val, o_val);
 
-        estimates.push_back(glm::abs(estVal - f(o.x, o.y)));
+        est.color.x = glm::abs(estVal - f(o.x, o.y));
     }
 
     return estimates;

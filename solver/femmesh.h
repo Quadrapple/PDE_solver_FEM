@@ -51,6 +51,7 @@ class FemMesh {
         bool pointInElem(unsigned int elInd, glm::dvec2 point) const;
 
         double evaluate(const std::vector<double> &solution, glm::dvec2 point) const;
+        double hasBoundary(unsigned int nodeId) const;
 
         std::shared_ptr<std::vector<Node>> nodes;
         std::vector<unsigned int> activeNodes;

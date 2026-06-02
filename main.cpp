@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <deque>
 #include <glad/glad.h>
@@ -50,33 +51,6 @@ class ControlKeyListener : public KeyPressListener {
 
 static EventHandler *ctx;
 
-float vertices[] = {
-    -0.5f, -0.5f, 1.0, 0.0, 0.0,
-     0.5f, -0.5f, 0.0, 1.0, 0.0,
-     0.0f,  0.5f, 0.0, 0.0, 1.0
-};  
-
-static unsigned int indices[] = {  // note that we start from 0!
-    0, 1, 2,   // first triangle
-}; 
-
-VertexArray demoTriangle() {
-    VertexArray triangle;
-    triangle.bind();
-    triangle.setVertices(std::make_unique<Buffer>(GL_ARRAY_BUFFER, sizeof(vertices), vertices));
-    triangle.setIndices(std::make_unique<Buffer>(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices));
-
-    triangle.addAttrib(VertexAttrib{2, sizeof(float) * 5, GL_FLOAT, (void*)0});
-    triangle.addAttrib(VertexAttrib{3, sizeof(float) * 5, GL_FLOAT, (void*)(2*sizeof(float))});
-    triangle.enableAttrib(0);
-    return triangle;
-}
-
-struct mVertex {
-    glm::vec2 pos;
-    glm::vec3 color;
-};
-
 struct Adjacency {
     std::vector<std::pair<unsigned int, std::list<unsigned int>>> arr; // adjacencies
 
@@ -127,13 +101,12 @@ std::shared_ptr<std::vector<Node>> demoTriangleMesh(int size, double range, floa
     for(int x = -size + 1; x <= size - 1; x++) {
         for(int y = -size + 1; y <= size - 1; y++) {
             Node v = {{x*delta , y*delta}, active, 0.0f};
-            v.position += glm::vec2{ ((double)rand() / RAND_MAX - 0.5) * (delta/50), (double)rand() / RAND_MAX * (delta/50) };
+            v.position += glm::vec2{ ((double)rand() / RAND_MAX - 0.5) * (delta/5), (double)rand() / RAND_MAX * (delta/5) };
             nodes->push_back(v);
         }
     }
     //=========================================================
 
-    printf("generated nodes\n");
     return std::move(nodes);
 }
 
@@ -198,9 +171,6 @@ glm::vec3 interpolate3(float val, glm::vec3 first, glm::vec3 second, glm::vec3 t
 VertexArray visTriangulation(std::vector<unsigned int> &mIndices, const std::vector<Node> &nodes) {
     std::vector<mVertex> mVertices;
 
-//  glm::vec3 colors[] = {{1.0, 0.1, 0.1}, {0.1, 1.0, 0.1}, {0.1, 0.1, 1.0}, 
-//                          {0.5, 0.0, 0.0}, {0.0, 0.5, 0.0}, {0.0, 0.0, 0.5}};
-
     for(const Node &n : nodes) {
         mVertices.push_back({n.position, {1.0, 1.0, 1.0}});
     }
@@ -247,6 +217,53 @@ VertexArray visEdges(const QuadEdge &q) {
     return triangleMesh;
 }
 */
+VertexArray errorGridGr(std::vector<mVertex> &grid, int size) {
+    std::vector<unsigned int> mIndices;
+
+    float max = 0;
+    for(const auto &v: grid) {
+        if(glm::abs(v.color.x) > max) {
+            max = glm::abs(v.color.x);
+        }
+    }
+    printf("maximal abs value is %f\n", max);
+
+    glm::vec3 lowColor = {0.05, 0.05, 0.05};
+    glm::vec3 midColor = {0.2, 0.2, 0.5};
+    glm::vec3 highColor = {1.0, 0.3, 0.0};
+
+    int activeNr = 0;
+    for(auto &v: grid) {
+        float colorVal = 0.0;
+        colorVal = glm::atan(v.color.x);
+        glm::vec3 color = glm::pow(interpolate3(colorVal, lowColor, midColor, highColor), glm::vec3(1.25f));
+        v.color = color;
+    }
+
+    int gridsize = size*2 + 1;
+    for(unsigned int i = 0; i < gridsize - 1; i++) {
+        for(unsigned int j = 0; j < gridsize - 1; j++) {
+            mIndices.push_back(i*gridsize + j);
+            mIndices.push_back((i+1)*gridsize + j);
+            mIndices.push_back(i*gridsize + j + 1);
+
+            mIndices.push_back((i+1)*gridsize + j + 1);
+            mIndices.push_back(i*gridsize + j + 1);
+            mIndices.push_back((i+1)*gridsize + j);
+        }
+    }
+
+    VertexArray triangleMesh;
+    triangleMesh.bind();
+    triangleMesh.setVertices(std::make_unique<Buffer>(GL_ARRAY_BUFFER, grid.size() * sizeof(mVertex), grid.data()));
+    triangleMesh.setIndices(std::make_unique<Buffer>(GL_ELEMENT_ARRAY_BUFFER, mIndices.size() * sizeof(unsigned int), mIndices.data()));
+
+    triangleMesh.indexCount = mIndices.size();
+    printf("%zu indices\n", mIndices.size());
+    triangleMesh.addAttrib(VertexAttrib{2, sizeof(mVertex), GL_FLOAT, (void*)offsetof(mVertex, pos)});
+    triangleMesh.addAttrib(VertexAttrib{3, sizeof(mVertex), GL_FLOAT, (void*)offsetof(mVertex, color)});
+    return triangleMesh;
+}
 
 VertexArray demoTriangleMeshGr(const std::unique_ptr<FemMesh> &femmesh, int size, const std::vector<double> &solution) {
     std::vector<mVertex> mVertices;
@@ -298,7 +315,7 @@ VertexArray demoTriangleMeshGr(const std::unique_ptr<FemMesh> &femmesh, int size
 }
 
 double f(double x, double y) {
-    return -x*20;
+    return -x*2;
 }
 
 float u(float x, float y) {
@@ -326,7 +343,7 @@ int main(int argc, char* argv[]) {
     ctx->disable(GL_DEPTH_TEST);
 
     const double range = 1.0;
-    const int size = 13;
+    const int size = 14;
 
     auto nodes = demoTriangleMesh(size, range, u);
     printf("nodes size %zu\n", nodes->size());
@@ -365,10 +382,12 @@ int main(int argc, char* argv[]) {
     printf("Solved! colors.size %zu\n", solution.size());
 
     printf("Estimating errors...\n");
-    auto errors = solver.estimateError(*fTriangles, solution, 2.1*(range/size), f);
+    int errGridSize = 100;
+    auto errors = solver.estimateError(*fTriangles, solution, errGridSize, range, f, sqrt(range/size));
     printf("Estimated!\n");
 
-    VertexArray triangle = demoTriangleMeshGr(fTriangles, size, errors);
+//  VertexArray triangle = demoTriangleMeshGr(fTriangles, size, solution);
+    VertexArray errMesh = errorGridGr(errors, errGridSize);
 
     glfwSwapInterval(1);
     
@@ -381,14 +400,14 @@ int main(int argc, char* argv[]) {
     while(!glfwWindowShouldClose(ctx->window)) {
         ctx->pollEvents();
 
-        triangle.bind();
+        errMesh.bind();
 
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
         color.use();
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-        glDrawElements(GL_TRIANGLES, triangle.indexCount, GL_UNSIGNED_INT, 0);
+        glDrawElements(GL_TRIANGLES, errMesh.indexCount, GL_UNSIGNED_INT, 0);
 
 //      whiteLines.use();
 //      glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);

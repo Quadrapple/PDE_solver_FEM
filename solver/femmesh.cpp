@@ -106,6 +106,18 @@ glm::dvec2 FemMesh::barycenterOfElement(int elIndex) const {
     return acc / 3.0;
 }
 
+
+double FemMesh::hasBoundary(unsigned int nodeId) const {
+    auto elIds = elemsOfNodes[nodeId];
+    for(auto elid : elIds) {
+        const FiniteElement &elem = elems[elid];
+        if(elem.ntype[0] == dirichlet || elem.ntype[1] == dirichlet || elem.ntype[2] == dirichlet) {
+            return true;
+        }
+    }
+    return false;
+}
+
 double FemMesh::evaluate(const std::vector<double> &solution, glm::dvec2 point) const {
     int elInd = elemBVH->elementFor(point, *this);
 
