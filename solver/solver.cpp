@@ -253,10 +253,7 @@ std::vector<mVertex> Solver::estimateError(const FemMesh &mesh, const std::vecto
         }
 
         //estimate laplacian
-        double estVal = (dx_val + dy_val + ndx_val + ndy_val - 4 * o_val) / (h*h);
-
-//      printf("(%f, %f): estval: %f, f: %f, \nwith dx: %f, dy: %f, ndx: %f, ndy: %f, o: %f\n", o.x, o.y, estVal, f(o.x, o.y),
-//              dx_val, dy_val, ndx_val, ndy_val, o_val);
+        double estVal = (dx_val + dy_val + ndx_val + ndy_val - 4*o_val) / (h*h);
 
         estimates.push_back({o, {glm::abs(estVal - f(o.x, o.y)), 0, 0} });
     }

@@ -69,7 +69,7 @@ struct Adjacency {
     }
 };
 
-std::shared_ptr<std::vector<Node>> demoTriangleMesh(int size, double range, float (*u)(float, float)) {
+std::shared_ptr<std::vector<Node>> demoTriangleMesh(int size, double range, float (*u)(float, float), int randomness) {
     auto nodes = std::make_shared<std::vector<Node>>();
     
     double delta = range / (float)size;
@@ -104,7 +104,7 @@ std::shared_ptr<std::vector<Node>> demoTriangleMesh(int size, double range, floa
     for(int x = -size + 1; x <= size - 1; x++) {
         for(int y = -size + 1; y <= size - 1; y++) {
             Node v = {{x*delta , y*delta}, active, 0.0f};
-            v.position += glm::vec2{ ((double)rand() / RAND_MAX - 0.5) * (delta/5), (double)rand() / RAND_MAX * (delta/5) };
+            v.position += glm::vec2{ ((double)rand() / RAND_MAX - 0.5) * (delta/randomness), (double)rand() / RAND_MAX * (delta/randomness) };
             nodes->push_back(v);
         }
     }
@@ -318,7 +318,7 @@ VertexArray demoTriangleMeshGr(const std::unique_ptr<FemMesh> &femmesh, int size
 }
 
 double f(double x, double y) {
-    return x > 0 ? 10*x : 0;
+    return -10;
 }
 
 float u(float x, float y) {
@@ -360,7 +360,9 @@ int main(int argc, char* argv[]) {
     int elementSubdivisionSize = 14;
     int prElementSubdivisionSize = elementSubdivisionSize;
 
-    auto nodes = demoTriangleMesh(elementSubdivisionSize, range, u);
+    int randomness = 5;
+    int prRandomness = randomness;
+    auto nodes = demoTriangleMesh(elementSubdivisionSize, range, u, randomness);
     auto qedge = std::make_unique<QuadEdge>(nodes);
 
     std::vector<unsigned int> ind;
@@ -425,8 +427,9 @@ int main(int argc, char* argv[]) {
         ImGui::NewFrame();
         {
             ImGui::Begin("Model loader");
-            ImGui::SliderInt("solution resolution", &elementSubdivisionSize, 1, 14);
+            ImGui::SliderInt("solution resolution", &elementSubdivisionSize, 1, 50);
             ImGui::SliderInt("errorGrid resolution", &errGridSize, 1, 20);
+            ImGui::SliderInt("randomness (less is more random)", &randomness, 1, 20);
             ImGui::SliderFloat("error diff step", &hError, 0.0f, 0.5f);
             ImGui::Checkbox("show error", &renderError);
             ImGui::End();
@@ -434,7 +437,8 @@ int main(int argc, char* argv[]) {
 
         unsigned int indexcount = 0;
 
-        if(hError != prHError || prErrGridSize != errGridSize || prElementSubdivisionSize != elementSubdivisionSize) {
+        if(hError != prHError || prErrGridSize != errGridSize || prElementSubdivisionSize != elementSubdivisionSize
+                ) {
             errors = solver.estimateError(*fTriangles, solution, errGridSize, range, f, hError);
             errMesh = errorGridGr(errors, errGridSize);
 
@@ -442,8 +446,8 @@ int main(int argc, char* argv[]) {
             prHError = hError;
         }
 
-        if(prElementSubdivisionSize != elementSubdivisionSize) {
-            *nodes = *demoTriangleMesh(elementSubdivisionSize, range, u);
+        if(prElementSubdivisionSize != elementSubdivisionSize || randomness != prRandomness) {
+            *nodes = *demoTriangleMesh(elementSubdivisionSize, range, u, randomness);
 
             qedge = std::make_unique<QuadEdge>(nodes);
 
@@ -463,6 +467,7 @@ int main(int argc, char* argv[]) {
             solMesh = demoTriangleMeshGr(fTriangles, elementSubdivisionSize, solution);
 
             prElementSubdivisionSize = elementSubdivisionSize;
+            prRandomness = randomness;
         }
 
         if(renderError) {

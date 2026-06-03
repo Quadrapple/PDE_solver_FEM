@@ -130,26 +130,32 @@ void QuadEdge::swap(Edge *e) {
     e->setDest(b->dest());
 }
 
-double triangleDet(glm::dvec2 a, glm::dvec2 b, glm::dvec2 c) {
-    return ((a.x - b.x)*(a.y - c.y) - (a.x - c.x)*(a.y - b.y));
+long double triangleDet(glm::dvec2 a, glm::dvec2 b, glm::dvec2 c) {
+    const long double a_[] = {a.x, a.y};
+    const long double b_[] = {b.x, b.y};
+    const long double c_[] = {c.x, c.y};
+
+    return ((a_[0] - b_[0])*(a_[1] - c_[1]) - (a_[0] - c_[0])*(a_[1] - b_[1]));
 }
 
 bool CCW(glm::dvec2 a, glm::dvec2 b, glm::dvec2 c) {
-    return triangleDet(a, b, c) > glm::epsilon<float>();
+    return triangleDet(a, b, c) > glm::epsilon<double>();
 }
 
 double inCircle(glm::dvec2 a, glm::dvec2 b, glm::dvec2 c, glm::dvec2 t) {
+    a -= t;
+    b -= t;
+    c -= t;
+
     const long double a_sq = a.x*a.x + a.y*a.y;
     const long double b_sq = b.x*b.x + b.y*b.y;
     const long double c_sq = c.x*c.x + c.y*c.y;
-    const long double t_sq = t.x*t.x + t.y*t.y;
 
-    const long double det0 = a_sq * triangleDet(b, c, t);
-    const long double det1 = b_sq * triangleDet(a, c, t);
-    const long double det2 = c_sq * triangleDet(a, b, t);
-    const long double det3 = t_sq * triangleDet(a, b, c);
+    const long double det0 = a_sq * (b.x*c.y - b.y*c.x);
+    const long double det1 = b_sq * (a.x*c.y - a.y*c.x);
+    const long double det2 = c_sq * (a.x*b.y - a.y*b.x);
 
-    return (det0 - det1 + det2 - det3) > glm::epsilon<float>();
+    return (det0 - det1 + det2) > glm::epsilon<double>();
 }
 
 bool QuadEdge::rightOf(Edge *e, glm::dvec2 p) {
@@ -188,18 +194,15 @@ std::pair<Edge*, Edge*> QuadEdge::makeTriangle(unsigned int aInd, unsigned int b
 
     if(CCW(nodes->at(aInd).position, nodes->at(bInd).position, nodes->at(cInd).position)) {
 
-//      printf("triangle %d, %d, %d\n", aInd, bInd, cInd);
         e_ac = connect(e_bc, e_ab);
         return std::make_pair(e_ab, e_bc->sym());
 
     } else if(CCW(nodes->at(aInd).position, nodes->at(cInd).position, nodes->at(bInd).position)) {
 
-//      printf("triangle %d, %d, %d\n", aInd, cInd, bInd);
         e_ac = connect(e_bc, e_ab);
         return std::make_pair(e_ac->sym(), e_ac);
 
     } else {
-//      printf("colinear\n");
         return std::make_pair(e_ab, e_bc->sym());
     }
 }
