@@ -6,6 +6,7 @@
 #include <deque>
 #include <memory>
 #include <ostream>
+#include <stack>
 #include <vector>
 
 double minof3(double a, double b, double c) {
@@ -124,7 +125,7 @@ void BBHierarchy::putall(const FemMesh &mesh) {
     root = std::move(bbs.front());
 }
 
-int BoundingBox::elementFor(glm::dvec2 point, const FemMesh &mesh) {
+int BoundingBox::elementFor(glm::dvec2 point, const FemMesh &mesh) const {
     if(insideBB(point)) {
         if(elemInd < 0) {
             return glm::max(childA->elementFor(point, mesh),
@@ -137,7 +138,7 @@ int BoundingBox::elementFor(glm::dvec2 point, const FemMesh &mesh) {
     return -1;
 }
 
-bool BoundingBox::insideBB(glm::dvec2 point) {
+bool BoundingBox::insideBB(glm::dvec2 point) const{
     if(point.x <= upper.x && point.x >= lower.x &&
             point.y <= upper.y && point.y >= lower.y) {
         return true;
@@ -151,4 +152,57 @@ int BBHierarchy::elementFor(glm::dvec2 point, const FemMesh &mesh) {
     } else {
         return -1;
     }
+}
+
+std::vector<int> BBHierarchy::elementsFor(const std::vector<glm::dvec2> &points, const FemMesh &mesh) {
+    std::vector<int> result(points.size(), -1);
+    std::deque< std::pair<const BoundingBox*, std::vector<unsigned int>> > searchfront;
+
+    std::vector<unsigned int> pInds;
+    //assume root to have children
+
+    for(int i = 0; i < points.size(); i++) {
+        const glm::dvec2 &point = points[i];
+        if(root->insideBB(point)) {
+            pInds.push_back(i);
+        }
+    }
+
+    searchfront.push_back(std::make_pair(root.get(), std::move(pInds)));
+
+    while(!searchfront.empty()) {
+        const auto &pointInds = searchfront.front().second;
+        const auto bb = searchfront.front().first;
+
+        if(bb->elemInd >= 0) {
+            for(const auto &pInd : pointInds) {
+                const glm::dvec2 &point = points[pInd];
+                if(mesh.pointInElem(bb->elemInd, point)) {
+                    result[pInd] = bb->elemInd;
+                }
+            }
+
+        } else {
+            std::vector<unsigned int> pIndsA, pIndsB;
+
+            for(const auto &pInd : pointInds) {
+                const glm::dvec2 &point = points[pInd];
+                if(bb->childA->insideBB(point)) {
+                    pIndsA.push_back(pInd);
+                }
+                if(bb->childB->insideBB(point)) {
+                    pIndsB.push_back(pInd);
+                }
+            }
+
+            if(!pIndsA.empty()) {
+                searchfront.push_back(std::make_pair(bb->childA.get(), std::move(pIndsA)));
+            }
+            if(!pIndsB.empty()) {
+                searchfront.push_back(std::make_pair(bb->childB.get(), std::move(pIndsB)));
+            }
+        }
+        searchfront.pop_front();
+    }
+    return result;
 }

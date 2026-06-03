@@ -201,46 +201,54 @@ std::vector<double> CG(const SquareMatrix &M, const std::vector<double> &F) {
 }
 
 
-//TODO replace with grid
 std::vector<mVertex> Solver::estimateError(const FemMesh &mesh, const std::vector<double> &solution,
         int size, double range, double (*f)(double, double), double h) {
 
     std::vector<mVertex> estimates;
+    std::vector<glm::dvec2> estPoints;
+
     estimates.reserve(mesh.activeNodes.size());
 
     if(h <= 0.0) {
         h = range / (size + 0);
     }
-
     double d = range / size;
+
+    glm::dvec2 dx, dy, ndx, ndy, o;
     for(int x = -size; x <= size; x++) {
         for(int y = -size; y <= size; y++) {
-            mVertex v = {{x*d , y*d}, {0.0,0.0,0.0}};
-            estimates.push_back(v);
+            o = {x*d , y*d};
+            dx = {o.x + h, o.y};
+            ndx = {o.x - h, o.y};
+            dy = {o.x, o.y + h};
+            ndy = {o.x, o.y - h};
+
+            estPoints.push_back(o);
+            estPoints.push_back(dx );
+            estPoints.push_back(ndx);
+            estPoints.push_back(dy );
+            estPoints.push_back(ndy);
         }
     }
 
-    glm::dvec2 dx, dy, ndx, ndy, o;
+    const auto evals = mesh.evaluate(solution, estPoints);
     double dx_val, dy_val, ndx_val, ndy_val, o_val;
-    for(auto &est : estimates) {
-        o = (glm::dvec2)est.pos;
 
-        dx = {o.x + h, o.y};
-        ndx = {o.x - h, o.y};
-        dy = {o.x, o.y + h};
-        ndy = {o.x, o.y - h};
-        
-        dx_val = mesh.evaluate(solution, dx);
-        dy_val = mesh.evaluate(solution, dy);
-        ndx_val = mesh.evaluate(solution, ndx);
-        ndy_val = mesh.evaluate(solution, ndy);
-        o_val = mesh.evaluate(solution, o);
+    for(int i = 0; i < evals.size(); i += 5) {
+        const glm::dvec2 &o = estPoints[i];
+
+        o_val = evals[i];
+        dx_val = evals[i+1];
+        dy_val = evals[i+2];
+        ndx_val = evals[i+3];
+        ndy_val = evals[i+4];
 
         if(std::isnan(dx_val) || 
                 std::isnan(dy_val) ||
                 std::isnan(ndx_val) ||
                 std::isnan(ndy_val) ||
                 std::isnan(o_val)) {
+            estimates.push_back({o, {0,0,0}});
             continue;
         }
 
@@ -250,7 +258,7 @@ std::vector<mVertex> Solver::estimateError(const FemMesh &mesh, const std::vecto
 //      printf("(%f, %f): estval: %f, f: %f, \nwith dx: %f, dy: %f, ndx: %f, ndy: %f, o: %f\n", o.x, o.y, estVal, f(o.x, o.y),
 //              dx_val, dy_val, ndx_val, ndy_val, o_val);
 
-        est.color.x = glm::abs(estVal - f(o.x, o.y));
+        estimates.push_back({o, {glm::abs(estVal - f(o.x, o.y)), 0, 0} });
     }
 
     return estimates;

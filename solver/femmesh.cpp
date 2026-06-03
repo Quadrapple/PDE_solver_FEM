@@ -6,13 +6,47 @@
 FemMesh::FemMesh() : activeNodes(), passiveNodes(), nodeIndexMap(), elems(), nodes() {
 }
 
-void FemMesh::setupFE(std::vector<unsigned int> elementIndices) {
-    for(int i = 0; i < elementIndices.size(); i+=3) {
-        elems.push_back({{elementIndices[i], elementIndices[i + 1], elementIndices[i + 2]}});
+void FemMesh::remesh(const std::vector<unsigned int> &elementIndices) {
+    activeNodes.clear();
+    passiveNodes.clear();
+    elems.clear();
+    nodeIndexMap.clear();
+    elemsOfNodes = std::vector<std::vector<unsigned int>>(nodes->size());
+
+    for(unsigned int i = 0; i < nodes->size(); i++) {
+        switch(nodes->at(i).type) {
+            case neumann:
+            case active:
+                nodeIndexMap.push_back(activeNodes.size());
+                activeNodes.push_back(i);
+                break;
+            case dirichlet:
+                nodeIndexMap.push_back(passiveNodes.size());
+                passiveNodes.push_back(i);
+                break;
+        }
     }
+
+    printf("activeNodes size %zu, passiveNodes size %zu, nodes size %zu, elemsOfNodes size %zu, elementIndices size %zu\n",
+            activeNodes.size(), passiveNodes.size(), this->nodes->size(), elemsOfNodes.size(), elementIndices.size());
+
+    unsigned int elemNr = 0;
+    for(int i = 0; i < elementIndices.size(); i+=3) {
+        glm::uvec3 indices = {nodeIndexMap[elementIndices[i]], nodeIndexMap[elementIndices[i+1]], nodeIndexMap[elementIndices[i+2]]};
+        elems.push_back({indices,
+                {nodes->at(elementIndices[i]).type, nodes->at(elementIndices[i+1]).type, nodes->at(elementIndices[i+2]).type}});
+
+        elemsOfNodes[elementIndices[i]].push_back(elemNr);
+        elemsOfNodes[elementIndices[i+1]].push_back(elemNr);
+        elemsOfNodes[elementIndices[i+2]].push_back(elemNr);
+        elemNr++;
+    }
+
+    elemBVH = std::make_unique<BBHierarchy>();
+    elemBVH->putall(*this);
 }
 
-FemMesh::FemMesh(std::shared_ptr<std::vector<Node>> nodes, std::vector<unsigned int> elementIndices) :
+FemMesh::FemMesh(std::shared_ptr<std::vector<Node>> nodes, const std::vector<unsigned int> &elementIndices) :
     activeNodes(), passiveNodes(), nodeIndexMap(), elemsOfNodes(nodes->size()), nodes(nodes)
 {
     for(unsigned int i = 0; i < nodes->size(); i++) {
@@ -43,7 +77,7 @@ FemMesh::FemMesh(std::shared_ptr<std::vector<Node>> nodes, std::vector<unsigned 
 
     elemBVH = std::make_unique<BBHierarchy>();
     elemBVH->putall(*this);
-    printf("activeNodes size %zu, passiveNodes size %zu, nodes size %zu\n", activeNodes.size(), passiveNodes.size(), this->nodes->size());
+//  printf("activeNodes size %zu, passiveNodes size %zu, nodes size %zu\n", activeNodes.size(), passiveNodes.size(), this->nodes->size());
 }
 
 glm::dvec3 barycentricCoords(glm::dvec2 n0, glm::dvec2 n1, glm::dvec2 n2, glm::dvec2 point) {
@@ -116,6 +150,38 @@ double FemMesh::hasBoundary(unsigned int nodeId) const {
         }
     }
     return false;
+}
+
+std::vector<double> FemMesh::evaluate(const std::vector<double> &solution, const std::vector<glm::dvec2> &points) const {
+    const std::vector<int> elInds = elemBVH->elementsFor(points, *this);
+    std::vector<double> result(points.size());
+
+    for(int i = 0; i < points.size(); i++) {
+        const glm::dvec2 &point = points[i];
+
+        if(elInds[i] < 0) {
+            result[i] = NAN;
+            continue;
+        }
+
+        const FiniteElement &elem = elems[elInds[i]];
+        double values[3];
+        glm::dvec2 pos[3];
+
+        for(int j = 0; j < 3; j++) {
+            if(elem.ntype[j] == dirichlet) {
+                values[j] = nodes->at(passiveNodes[elem.nodes[j]]).value;
+                pos[j] = nodes->at(passiveNodes[elem.nodes[j]]).position;
+            } else {
+                values[j] = solution[elem.nodes[j]];
+                pos[j] = nodes->at(activeNodes[elem.nodes[j]]).position;
+            }
+        }
+        glm::dvec3 barPos = barycentricCoords( pos[0], pos[1], pos[2], point);
+        result[i] = barPos[0]*values[0] + barPos[1]*values[1] + barPos[2]*values[2];
+    }
+
+    return result;
 }
 
 double FemMesh::evaluate(const std::vector<double> &solution, glm::dvec2 point) const {

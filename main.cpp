@@ -17,11 +17,14 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
+
 #include "buffer.h"
 #include "general/event_handler.h"
 #include "femmesh.h"
 #include "quadedge.h"
-#include "quadtree.h"
 #include "solver.h"
 #include "shader.h"
 #include "vao.h"
@@ -220,13 +223,13 @@ VertexArray visEdges(const QuadEdge &q) {
 VertexArray errorGridGr(std::vector<mVertex> &grid, int size) {
     std::vector<unsigned int> mIndices;
 
-    float max = 0;
-    for(const auto &v: grid) {
-        if(glm::abs(v.color.x) > max) {
-            max = glm::abs(v.color.x);
-        }
-    }
-    printf("maximal abs value is %f\n", max);
+//  float max = 0;
+//  for(const auto &v: grid) {
+//      if(glm::abs(v.color.x) > max) {
+//          max = glm::abs(v.color.x);
+//      }
+//  }
+//  printf("maximal abs value is %f\n", max);
 
     glm::vec3 lowColor = {0.05, 0.05, 0.05};
     glm::vec3 midColor = {0.2, 0.2, 0.5};
@@ -315,7 +318,7 @@ VertexArray demoTriangleMeshGr(const std::unique_ptr<FemMesh> &femmesh, int size
 }
 
 double f(double x, double y) {
-    return -x*2;
+    return x > 0 ? 10*x : 0;
 }
 
 float u(float x, float y) {
@@ -342,13 +345,22 @@ int main(int argc, char* argv[]) {
     ctx->disableMouse();
     ctx->disable(GL_DEPTH_TEST);
 
+    // Setup Dear ImGui context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+//  io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+//  io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+
+    // Setup Platform/Renderer backends
+    ImGui_ImplGlfw_InitForOpenGL(ctx->window, true);
+    ImGui_ImplOpenGL3_Init();
+
     const double range = 1.0;
-    const int size = 14;
+    int elementSubdivisionSize = 14;
+    int prElementSubdivisionSize = elementSubdivisionSize;
 
-    auto nodes = demoTriangleMesh(size, range, u);
-    printf("nodes size %zu\n", nodes->size());
-
-    //triangulate
+    auto nodes = demoTriangleMesh(elementSubdivisionSize, range, u);
     auto qedge = std::make_unique<QuadEdge>(nodes);
 
     std::vector<unsigned int> ind;
@@ -381,33 +393,92 @@ int main(int argc, char* argv[]) {
     auto solution = solver.solve(*fTriangles, f);
     printf("Solved! colors.size %zu\n", solution.size());
 
+    int errGridSize = 50;
+    int prErrGridSize = errGridSize;
+
+    bool renderError = false;
+    bool prRenderError = renderError;
+
+    float hError = sqrt(range/elementSubdivisionSize);
+    float prHError = hError;
+
     printf("Estimating errors...\n");
-    int errGridSize = 100;
-    auto errors = solver.estimateError(*fTriangles, solution, errGridSize, range, f, sqrt(range/size));
+    auto errors = solver.estimateError(*fTriangles, solution, errGridSize, range, f, hError);
     printf("Estimated!\n");
 
-//  VertexArray triangle = demoTriangleMeshGr(fTriangles, size, solution);
+    VertexArray solMesh = demoTriangleMeshGr(fTriangles, elementSubdivisionSize, solution);
     VertexArray errMesh = errorGridGr(errors, errGridSize);
 
-    glfwSwapInterval(1);
-    
     Shader color("general/graphics/glsl/color.vert", "general/graphics/glsl/color.frag");
     Shader point("general/graphics/glsl/color.vert", "general/graphics/glsl/point.frag");
     Shader whiteLines("general/graphics/glsl/color.vert", "general/graphics/glsl/white.frag");
     color.use();
 
+    glfwSwapInterval(1);
     glPointSize(10.0f);
     while(!glfwWindowShouldClose(ctx->window)) {
         ctx->pollEvents();
 
-        errMesh.bind();
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+
+        ImGui::NewFrame();
+        {
+            ImGui::Begin("Model loader");
+            ImGui::SliderInt("solution resolution", &elementSubdivisionSize, 1, 14);
+            ImGui::SliderInt("errorGrid resolution", &errGridSize, 1, 20);
+            ImGui::SliderFloat("error diff step", &hError, 0.0f, 0.5f);
+            ImGui::Checkbox("show error", &renderError);
+            ImGui::End();
+        }
+
+        unsigned int indexcount = 0;
+
+        if(hError != prHError || prErrGridSize != errGridSize || prElementSubdivisionSize != elementSubdivisionSize) {
+            errors = solver.estimateError(*fTriangles, solution, errGridSize, range, f, hError);
+            errMesh = errorGridGr(errors, errGridSize);
+
+            prErrGridSize = errGridSize;
+            prHError = hError;
+        }
+
+        if(prElementSubdivisionSize != elementSubdivisionSize) {
+            *nodes = *demoTriangleMesh(elementSubdivisionSize, range, u);
+
+            qedge = std::make_unique<QuadEdge>(nodes);
+
+            std::vector<unsigned int> ind;
+            ind.reserve(nodes->size());
+            for(int i = 0; i < nodes->size(); i++) {
+                ind.push_back(i);
+            }
+
+            std::sort(ind.begin(), ind.end(), compareXY(*nodes));
+            qedge->delaunay(ind.data(), ind.size());
+            els = genElements(*qedge);
+
+            fTriangles->remesh(els);
+
+            solution = solver.solve(*fTriangles, f);
+            solMesh = demoTriangleMeshGr(fTriangles, elementSubdivisionSize, solution);
+
+            prElementSubdivisionSize = elementSubdivisionSize;
+        }
+
+        if(renderError) {
+            errMesh.bind();
+            indexcount = errMesh.indexCount;
+        } else {
+            solMesh.bind();
+            indexcount = solMesh.indexCount;
+        }
 
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
         color.use();
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-        glDrawElements(GL_TRIANGLES, errMesh.indexCount, GL_UNSIGNED_INT, 0);
+        glDrawElements(GL_TRIANGLES, indexcount, GL_UNSIGNED_INT, 0);
 
 //      whiteLines.use();
 //      glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -420,6 +491,15 @@ int main(int argc, char* argv[]) {
 //      glDrawElements(GL_POINTS, triangle.indexCount, GL_UNSIGNED_INT, 0);
 
         ctx->bindVertexArray(0);
+
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
         glfwSwapBuffers(ctx->window);
     }
+
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+    glfwTerminate();
 }

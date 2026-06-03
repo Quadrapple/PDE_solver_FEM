@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 #include <memory>
+#include <vector>
 
 class FemMesh;
 
@@ -22,8 +23,8 @@ struct BoundingBox {
     std::unique_ptr<BoundingBox> childA;
     std::unique_ptr<BoundingBox> childB;
 
-    bool insideBB(glm::dvec2 point);
-    int elementFor(glm::dvec2 point, const FemMesh &mesh);
+    bool insideBB(glm::dvec2 point) const;
+    int elementFor(glm::dvec2 point, const FemMesh &mesh) const;
 };
 
 class BBHierarchy {
@@ -32,6 +33,7 @@ class BBHierarchy {
 
         void putall(const FemMesh &mesh);
         int elementFor(glm::dvec2 point, const FemMesh &mesh);
+        std::vector<int> elementsFor(const std::vector<glm::dvec2> &points, const FemMesh &mesh);
 
         std::unique_ptr<BoundingBox> root;
 };
