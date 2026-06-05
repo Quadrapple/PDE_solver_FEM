@@ -20,7 +20,9 @@ add_executable(${PROJECT_NAME}
 
     solver/femmesh.cpp solver/solver.cpp solver/quadedge.cpp solver/quadtree.cpp solver/bbhierarchy.cpp)
 
-target_link_libraries(${PROJECT_NAME} PUBLIC GL dl glfw)
+find_package(OpenMP REQUIRED)
+
+target_link_libraries(${PROJECT_NAME} PUBLIC GL dl glfw OpenMP::OpenMP_CXX)
 target_include_directories(${PROJECT_NAME} PUBLIC 
     "${PROJECT_SOURCE_DIR}/general" 
     "${PROJECT_SOURCE_DIR}/general/graphics"

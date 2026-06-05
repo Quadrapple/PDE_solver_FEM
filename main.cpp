@@ -425,7 +425,6 @@ int main(int argc, char* argv[]) {
     float prHError = hError;
 
     auto errGrid = getGrid(errGridSize, range);
-    auto errors = solver.estimateError(*fTriangles, solution, errGrid, f, hError);
 
     time = gettime() - t0;
     printf("t: %ld; Estimated errors!\n", time);
@@ -433,10 +432,6 @@ int main(int argc, char* argv[]) {
     VertexArray solMesh = visSolution(fTriangles, elementSubdivision, solution);
     time = gettime() - t0;
     printf("t: %ld; Solution mesh!\n", time);
-
-//  VertexArray errMesh = meshGr(errGrid, errors);
-//  time = gettime() - t0;
-//  printf("t: %ld; Error mesh!\n", time);
 
     const Shader color("general/graphics/glsl/color.vert", "general/graphics/glsl/color.frag");
 //  const Shader point("general/graphics/glsl/color.vert", "general/graphics/glsl/point.frag");
@@ -471,8 +466,8 @@ int main(int argc, char* argv[]) {
 
         ImGui::NewFrame();
         {
-            ImGui::Begin("Model loader");
-            ImGui::SliderInt("solution resolution", &elementSubdivision, 1, 200);
+            ImGui::Begin("Options");
+            ImGui::SliderInt("solution resolution", &elementSubdivision, 1, 500);
             ImGui::SliderFloat("error diff step", &hError, 0.0f, 0.5f);
 
             ImGui::SliderFloat("lowest", &thresholds.x, -10.f, 10.f);
@@ -500,11 +495,19 @@ int main(int argc, char* argv[]) {
             auto newmesh = perfectNodeGrid(elementSubdivision, range, u);
             fTriangles->remesh(newmesh.first, newmesh.second);
 
+            time = gettime() - t0;
+            printf("t: %ld; Solving...\n", time);
+
             solution = solver.solve(*fTriangles, f);
+
+            time = gettime() - t0;
+            printf("t: %ld; Solved!\n", time);
+
             solMesh = visSolution(fTriangles, elementSubdivision, solution);
 
             prElementSubdivisionSize = elementSubdivision;
             prRandomness = randomness;
+            hError = range/elementSubdivision;
         }
 
 

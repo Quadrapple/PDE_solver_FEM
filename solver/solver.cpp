@@ -5,7 +5,8 @@
 #include <cstdio>
 #include <glm/common.hpp>
 #include <iterator>
-#include <ratio>
+#include <simd>
+#include <omp.h>
 
 double triangle_area(glm::dvec2 p0, glm::dvec2 p1, glm::dvec2 p2) {
     return ((p0.x - p1.x)*(p0.y - p2.y) - (p0.x - p2.x)*(p0.y - p1.y)) / 2;
@@ -89,7 +90,6 @@ std::pair<SquareMatrix, std::vector<double>> Solver::assemble(const FemMesh &mes
         Node n2 = mesh.nodeOfElement(elInd, 2);
         Node nodes[3] = {n0, n1, n2};
 
-
         unsigned int node_I;
         for(int i = 0; i < 3; i++) {
             switch(el.ntype[i]) {
@@ -123,10 +123,10 @@ std::pair<SquareMatrix, std::vector<double>> Solver::assemble(const FemMesh &mes
 
 double aTbProd(const std::vector<double> &a, const AssembledRow &row) {
 
-    if(row.indices.size() != row.indices.size()) {
-        printf("indices and values diverge; with: indices.size: %zu, values.size: %zu", row.indices.size(), row.values.size());
-        exit(0);
-    }
+//  if(row.indices.size() != row.indices.size()) {
+//      printf("indices and values diverge; with: indices.size: %zu, values.size: %zu", row.indices.size(), row.values.size());
+//      exit(0);
+//  }
 
     const unsigned int nnz = row.values.size();
     double res = 0.0;
@@ -137,69 +137,120 @@ double aTbProd(const std::vector<double> &a, const AssembledRow &row) {
     return res;
 }
 
-//assume the matrix is square with sides equal to the length of the vector a_T@M@b
-double aTMbProd(const std::vector<double> &a, const SquareMatrix &M, const std::vector<double> &b) {
-    const unsigned int len = a.size();
-    double res = 0.0;
-    double acc = 0.0;
+CompactSquareMatrix compactify(const SquareMatrix &sqm) {
+    CompactSquareMatrix cSqm;
+    for(int i = 0; i < sqm.rows.size(); i++) {
+        cSqm.rowStarts.push_back(cSqm.values.size());
 
-    for(int i = 0; i < len; i++) {
-        res += a[i]*aTbProd(b, M.rows[i]);
+        for(int j = 0; j < sqm.rows[i].values.size(); j++) {
+            cSqm.values.push_back(sqm.rows[i].values[j]);
+            cSqm.indices.push_back(sqm.rows[i].indices[j]);
+        }
     }
-    return res;
+    cSqm.rowStarts.push_back(cSqm.values.size());
+    return cSqm;
 }
 
-double aTbProd(const std::vector<double> &a, const std::vector<double> &b) {
-    const unsigned int len = a.size();
-    double res = 0.0;
+extern time_t gettime();
 
-    for(int i = 0; i < len; i++) {
-        res += a[i] * b[i];
-    }
-    return res;
-}
+std::vector<double> CG(const CompactSquareMatrix &M, const std::vector<double> &F) {
 
-std::vector<double> CG(const SquareMatrix &M, const std::vector<double> &F) {
-    std::vector<double> x(F.size(), 0.0);
-
-    std::vector<double> r(F);
-    std::vector<double> p(F);
-
-    double alpha = 0.0;
-    double beta = 0.0;
+    const time_t t0 = gettime();
+    time_t time = 0;
+    printf("t: %ld; Entered CG loop\n", time);
 
     const unsigned int len = F.size();
 
-    double rTr = aTbProd(r, r);
-    double rTr_n = 0.0;
+    std::vector<double> r(F);
+    std::vector<double> p(F.size());
+    std::vector<double> precond(F.size());
 
-    for(int k = 0; k < len; k++) {
-        alpha = rTr / aTMbProd(p, M, p);
+    double rTz = 0.0;
 
+    for(int i = 0; i < len; i++) {
+        double acc = 0.0;
+        for(int j = M.rowStarts[i]; j < M.rowStarts[i+1]; j++) {
+
+            acc += glm::abs(M.values[j]);
+//          if(i == M.indices[j]) {
+//              precond[i] = 1.0 / M.values[j];
+//              break;
+//          }
+        }
+        precond[i] = 1.0 / acc;
+
+        p[i] = r[i] * precond[i];
+        rTz += r[i] * r[i] * precond[i];
+    }
+
+    std::vector<double> x(F.size(), 0.0);
+
+    double alpha = 0.0;
+    double beta = 0.0;
+    double rTz_n = 0.0;
+
+    std::vector<double> Mp(len);
+
+    double pMp = 0.0;
+    int k = 0;
+
+
+#pragma omp parallel if(F.size() > 10000)
+    while(k < len) {
+
+#pragma omp for reduction (+:pMp)
         for(int i = 0; i < len; i++) {
-            x[i] += alpha*p[i];
+            double acc = 0.0;
+
+            for(int j = M.rowStarts[i]; j < M.rowStarts[i+1]; j++) {
+                acc += p[M.indices[j]] * M.values[j];
+            }
+
+            Mp[i] = acc;
+            pMp += acc * p[i];
         }
 
-        for(int i = 0; i < len; i++) {
-            r[i] -= alpha * aTbProd(p, M.rows[i]);
+#pragma omp single
+        {
+            alpha = rTz / pMp;
+            rTz_n = 0;
         }
 
-        rTr_n = aTbProd(r, r);
-
-        if(rTr_n < 0.0000001) {
-            break;
+#pragma omp for reduction (+:rTz_n)
+        for(int i = 0; i < len; i++) {
+            x[i] += alpha * p[i];
+            r[i] -= alpha * Mp[i];
+            rTz_n += r[i] * r[i] * precond[i];
         }
 
-        beta = rTr_n / rTr;
-        rTr = rTr_n;
+#pragma omp single
+        {
+//          time = gettime() - t0;
+//          printf("t: %ld; k = %d, r = %lf\n", time, k, rTz_n);
 
+            if(rTz_n < 0.0000001) {
+                k = len;
+
+            } else {
+                beta = rTz_n / rTz;
+                rTz = rTz_n;
+                k++;
+                pMp = 0.0;
+            }
+        }
+
+#pragma omp for 
         for(int i = 0; i < len; i++) {
-            p[i] = p[i]*beta + r[i];
+            p[i] *= beta;
+            p[i] += r[i] * precond[i];
         }
     }
+
+    time = gettime() - t0;
+    printf("t: %ld; Exited CG loop\n", time);
+
     return x;
 }
-
 
 std::vector<double> Solver::estimateError(const FemMesh &mesh, const std::vector<double> &solution,
         const SkeletonMesh &estmesh, double (*f)(double, double), double h) {
@@ -272,8 +323,7 @@ void printSquareMat(const SquareMatrix &M) {
 
 std::vector<double> Solver::solve(const FemMesh &m, double (*function)(double, double)) {
     auto K_F = assemble(m, function);
-    printf("assembled!\n");
-    SquareMatrix K = K_F.first;
+    CompactSquareMatrix K = compactify(K_F.first);
     std::vector<double> F = K_F.second;
     std::vector<double> solution = CG(K, F);
 

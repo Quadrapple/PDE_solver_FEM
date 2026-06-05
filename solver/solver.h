@@ -13,6 +13,13 @@ struct AssembledRow {
     std::vector<double> values;
 };
 
+class CompactSquareMatrix {
+    public:
+        std::vector<unsigned int> rowStarts;
+        std::vector<unsigned int> indices;
+        std::vector<double> values;
+};
+
 class SquareMatrix {
     public:
         std::vector<AssembledRow> rows;
