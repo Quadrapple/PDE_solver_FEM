@@ -52,7 +52,7 @@ struct EdgeRecord {
 
 class QuadEdge {
     public:
-        QuadEdge(const std::shared_ptr<std::vector<Node>> nodes) : nodes(nodes) {}
+        QuadEdge(const std::shared_ptr<std::vector<Node>> nodes);
 
         Edge* makeEdge();
         Edge* makeEdge(int origin);
@@ -63,8 +63,10 @@ class QuadEdge {
 
         const Node& destOf(Edge *e);
         const Node& origOf(Edge *e);
-        std::pair<Edge*, Edge*> delaunay(unsigned int *nodes, int size);
+        
+        void triangulate();
 
+        std::pair<Edge*, Edge*> delaunay(unsigned int *nodes, int size);
         const std::shared_ptr<std::vector<Node>> nodes;
         std::vector<EdgeRecord*> edgeRecords;
     private:

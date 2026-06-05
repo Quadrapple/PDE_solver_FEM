@@ -11,7 +11,7 @@ class Shader {
 
         Shader(std::string vertexSource, std::string fragmentSource);
 
-        void use();
+        void use() const;
 
         //Uniform setters
         void setBool(const std::string &name, bool value) const;

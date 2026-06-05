@@ -90,6 +90,36 @@ int Edge::index() {
     return localIndex;
 }
 
+static auto compareXY(const std::vector<Node> &nodes) {
+    return [&nodes] (const unsigned int &a, const unsigned int &b) {
+        glm::dvec2 aval = nodes.at(a).position;
+        glm::dvec2 bval = nodes.at(b).position;
+
+        if(aval.x < bval.x) {
+            return true;
+        } else if(aval.x > bval.x) {
+            return false;
+        } else {
+            return aval.y < bval.y;
+        }
+    };
+}
+
+QuadEdge::QuadEdge(const std::shared_ptr<std::vector<Node>> nodes) : nodes(nodes) {
+}
+
+void QuadEdge::triangulate() {
+    std::vector<unsigned int> ind;
+    ind.reserve(nodes->size());
+
+    for(int i = 0; i < nodes->size(); i++) {
+        ind.push_back(i);
+    }
+
+    std::sort(ind.begin(), ind.end(), compareXY(*nodes));
+    this->delaunay(ind.data(), ind.size());
+}
+
 Edge* QuadEdge::connect(Edge *a, Edge *b) {
     Edge *e = makeEdge();
 
@@ -142,18 +172,18 @@ bool CCW(glm::dvec2 a, glm::dvec2 b, glm::dvec2 c) {
     return triangleDet(a, b, c) > glm::epsilon<double>();
 }
 
-double inCircle(glm::dvec2 a, glm::dvec2 b, glm::dvec2 c, glm::dvec2 t) {
+bool inCircle(glm::dvec2 a, glm::dvec2 b, glm::dvec2 c, glm::dvec2 t) {
     a -= t;
     b -= t;
     c -= t;
 
-    const long double a_sq = a.x*a.x + a.y*a.y;
-    const long double b_sq = b.x*b.x + b.y*b.y;
-    const long double c_sq = c.x*c.x + c.y*c.y;
+    const double a_sq = a.x*a.x + a.y*a.y;
+    const double b_sq = b.x*b.x + b.y*b.y;
+    const double c_sq = c.x*c.x + c.y*c.y;
 
-    const long double det0 = a_sq * (b.x*c.y - b.y*c.x);
-    const long double det1 = b_sq * (a.x*c.y - a.y*c.x);
-    const long double det2 = c_sq * (a.x*b.y - a.y*b.x);
+    const long double det0 = a_sq * ((long double)b.x*c.y - (long double)b.y*c.x);
+    const long double det1 = b_sq * ((long double)a.x*c.y - (long double)a.y*c.x);
+    const long double det2 = c_sq * ((long double)a.x*b.y - (long double)a.y*b.x);
 
     return (det0 - det1 + det2) > glm::epsilon<double>();
 }

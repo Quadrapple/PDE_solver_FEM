@@ -6,11 +6,12 @@
 FemMesh::FemMesh() : activeNodes(), passiveNodes(), nodeIndexMap(), elems(), nodes() {
 }
 
-void FemMesh::remesh(const std::vector<unsigned int> &elementIndices) {
+void FemMesh::remesh(std::shared_ptr<std::vector<Node>> nodes, const std::vector<unsigned int> &elementIndices) {
     activeNodes.clear();
     passiveNodes.clear();
     elems.clear();
     nodeIndexMap.clear();
+    *this->nodes = *nodes;
     elemsOfNodes = std::vector<std::vector<unsigned int>>(nodes->size());
 
     for(unsigned int i = 0; i < nodes->size(); i++) {

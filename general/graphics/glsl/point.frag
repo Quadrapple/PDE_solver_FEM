@@ -1,12 +1,9 @@
 #version 330 core
 
-in vec3 TexCoords;
-
-out vec4 FragColor;
+in vec2 vertPos;
+in float colorval;
 
 void main() {
-    vec4 result = vec4(TexCoords, 1.0);
-
     if (distance(gl_PointCoord , vec2(0.5, 0.5)) > 0.5) {
         discard;
     }

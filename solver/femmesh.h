@@ -36,6 +36,18 @@ struct FiniteElement {
     NodeType ntype[3];
 };
 
+struct SkeletonMesh {
+    std::vector<glm::dvec2> vertices;
+    std::vector<unsigned int> indices;
+    std::vector<unsigned int> boundary;
+};
+
+struct FemMeshData {
+    std::vector<Node> nodes;
+    std::vector<unsigned int> indices;
+    std::vector<unsigned int> boundary;
+};
+
 class FemMesh {
     public:
         FemMesh();
@@ -46,7 +58,7 @@ class FemMesh {
 
 
         unsigned int indexOfNodeOfElement(int elIndex, int localNodeIndex) const;
-        void remesh(const std::vector<unsigned int> &indices);
+        void remesh(std::shared_ptr<std::vector<Node>> nodes, const std::vector<unsigned int> &indices);
 
         bool pointInElem(unsigned int elInd, glm::dvec2 point) const;
 

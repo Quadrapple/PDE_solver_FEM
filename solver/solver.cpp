@@ -186,7 +186,7 @@ std::vector<double> CG(const SquareMatrix &M, const std::vector<double> &F) {
 
         rTr_n = aTbProd(r, r);
 
-        if(rTr_n < 0.0001) {
+        if(rTr_n < 0.0000001) {
             break;
         }
 
@@ -201,34 +201,30 @@ std::vector<double> CG(const SquareMatrix &M, const std::vector<double> &F) {
 }
 
 
-std::vector<mVertex> Solver::estimateError(const FemMesh &mesh, const std::vector<double> &solution,
-        int size, double range, double (*f)(double, double), double h) {
+std::vector<double> Solver::estimateError(const FemMesh &mesh, const std::vector<double> &solution,
+        const SkeletonMesh &estmesh, double (*f)(double, double), double h) {
 
-    std::vector<mVertex> estimates;
+    std::vector<double> estimates;
     std::vector<glm::dvec2> estPoints;
 
     estimates.reserve(mesh.activeNodes.size());
 
     if(h <= 0.0) {
-        h = range / (size + 0);
+        h = 0.0001;
     }
-    double d = range / size;
 
-    glm::dvec2 dx, dy, ndx, ndy, o;
-    for(int x = -size; x <= size; x++) {
-        for(int y = -size; y <= size; y++) {
-            o = {x*d , y*d};
-            dx = {o.x + h, o.y};
-            ndx = {o.x - h, o.y};
-            dy = {o.x, o.y + h};
-            ndy = {o.x, o.y - h};
+    glm::dvec2 dx, dy, ndx, ndy;
+    for(const auto &o : estmesh.vertices) {
+        dx = {o.x + h, o.y};
+        ndx = {o.x - h, o.y};
+        dy = {o.x, o.y + h};
+        ndy = {o.x, o.y - h};
 
-            estPoints.push_back(o);
-            estPoints.push_back(dx );
-            estPoints.push_back(ndx);
-            estPoints.push_back(dy );
-            estPoints.push_back(ndy);
-        }
+        estPoints.push_back(o);
+        estPoints.push_back(dx );
+        estPoints.push_back(ndx);
+        estPoints.push_back(dy );
+        estPoints.push_back(ndy);
     }
 
     const auto evals = mesh.evaluate(solution, estPoints);
@@ -248,14 +244,15 @@ std::vector<mVertex> Solver::estimateError(const FemMesh &mesh, const std::vecto
                 std::isnan(ndx_val) ||
                 std::isnan(ndy_val) ||
                 std::isnan(o_val)) {
-            estimates.push_back({o, {0,0,0}});
+            estimates.push_back(0);
             continue;
         }
 
         //estimate laplacian
         double estVal = (dx_val + dy_val + ndx_val + ndy_val - 4*o_val) / (h*h);
+//      printf("(%f, %f) with %f\n", o.x, o.y, estVal);
 
-        estimates.push_back({o, {glm::abs(estVal - f(o.x, o.y)), 0, 0} });
+        estimates.push_back(glm::abs(estVal - f(o.x, o.y)));
     }
 
     return estimates;

@@ -10,7 +10,7 @@ RenderTarget::RenderTarget(glm::uvec2 size) : size(size) {
     glGenFramebuffers(1, &id);
 
     bind();
-    *this << std::make_shared<Texture>(GL_TEXTURE_2D, GL_RGB, size, GL_RGB, nullptr)
+    *this << std::make_shared<Texture>(GL_TEXTURE_2D, GL_R32F, size, GL_RED, nullptr)
           << Renderbuffer(GL_DEPTH24_STENCIL8, size);
 
     assertComplete();

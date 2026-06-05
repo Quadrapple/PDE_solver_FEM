@@ -7,7 +7,7 @@ Shader::Shader(std::string vertexSource, std::string fragmentSource) {
     id = ShaderLoader::createShader(vertexSource, fragmentSource);
 }
 
-void Shader::use() { 
+void Shader::use() const { 
     State::getContext().useProgram(id);
 }
 

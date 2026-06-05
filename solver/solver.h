@@ -5,7 +5,7 @@
 
 struct mVertex {
     glm::vec2 pos;
-    glm::vec3 color;
+    float value;
 };
 
 struct AssembledRow {
@@ -26,8 +26,8 @@ class Solver {
 
     public:
         std::vector<double> solve(const FemMesh &mesh, double (*function)(double, double));
-        std::vector<mVertex> estimateError(const FemMesh &mesh, const std::vector<double> &solution,
-                int size, double range, double (*f)(double, double), double h = 0.0);
+        std::vector<double> estimateError(const FemMesh &mesh, const std::vector<double> &solution,
+                const SkeletonMesh &estmesh, double (*f)(double, double), double h);
     private:
 
         std::pair<SquareMatrix, std::vector<double>> assemble(const FemMesh &mesh, double (*function)(double, double));

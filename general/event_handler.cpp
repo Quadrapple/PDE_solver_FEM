@@ -17,7 +17,7 @@ EventHandler::EventHandler(std::string title, glm::uvec2 size) : State(title, si
 }
 
 void EventHandler::framebufferSizeCallback(GLFWwindow *window, int width, int height) {
-    getContext().setWindowSize({width, height});
+//  getContext().setWindowSize({width, height});
 }
 
 

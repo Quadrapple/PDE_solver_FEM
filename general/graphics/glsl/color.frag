@@ -1,10 +1,10 @@
 #version 330 core
 
 in vec3 TexCoords;
+in float colorVal;
 
-out vec4 FragColor;
+out float FragColor;
 
 void main() {
-    vec4 result = vec4(TexCoords, 1.0);
-    FragColor = result;
+    FragColor = colorVal;
 }
