@@ -13,7 +13,10 @@ uniform vec3 highColor;
 out vec4 FragColor;
 
 float f(vec2 tc) {
-    return -100*tc.y;
+    float x = tc.x;
+    float y = tc.y;
+
+    return F_IMPL;
 }
 
 float laplacian(float ds, vec2 tc) {

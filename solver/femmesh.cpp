@@ -141,7 +141,6 @@ glm::dvec2 FemMesh::barycenterOfElement(int elIndex) const {
     return acc / 3.0;
 }
 
-
 double FemMesh::hasBoundary(unsigned int nodeId) const {
     auto elIds = elemsOfNodes[nodeId];
     for(auto elid : elIds) {
@@ -151,6 +150,10 @@ double FemMesh::hasBoundary(unsigned int nodeId) const {
         }
     }
     return false;
+}
+
+int FemMesh::elementFor(glm::dvec2 point) const {
+    return elemBVH->elementFor(point, *this);
 }
 
 std::vector<double> FemMesh::evaluate(const std::vector<double> &solution, const std::vector<glm::dvec2> &points) const {
@@ -192,7 +195,6 @@ double FemMesh::evaluate(const std::vector<double> &solution, glm::dvec2 point) 
 //      printf("nanned for %f, %f\n", point.x, point.y);
         return NAN;
     }
-
 
     const FiniteElement &elem = elems[elInd];
     double values[3];

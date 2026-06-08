@@ -12,7 +12,6 @@
 #include <glm/ext/scalar_constants.hpp>
 #include <glm/geometric.hpp>
 #include <glm/trigonometric.hpp>
-#include <list>
 #include <stdio.h>
 
 #include <glm/glm.hpp>
@@ -20,6 +19,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "imgui.h"
+#include "imgui_stdlib.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 
@@ -28,9 +28,12 @@
 #include "femmesh.h"
 #include "quadedge.h"
 #include "render_target.h"
+#include "shader_loader.h"
 #include "solver.h"
 #include "shader.h"
 #include "vao.h"
+#include "comparators.h"
+#include "exprtk_wrapper.h"
 
 class ControlKeyListener : public KeyPressListener {
     public:
@@ -56,23 +59,10 @@ class ControlKeyListener : public KeyPressListener {
 };
 
 static EventHandler *ctx;
+static time_t t0 = 0;
+static glm::vec2 cursorPos;
 
-struct Adjacency {
-    std::vector<std::pair<unsigned int, std::list<unsigned int>>> arr; // adjacencies
-
-    Adjacency(int num) : arr(num) {
-        for(int i = 0; i < num; i++) {
-            arr.emplace_back();
-        }
-    }
-
-    void connect(unsigned int a_local, unsigned int b_local) {
-        arr[a_local].second.push_back(b_local);
-        arr[b_local].second.push_back(a_local);
-    }
-};
-
-std::shared_ptr<std::vector<Node>> perturbedNodeGrid(int size, double range, float (*u)(float, float), int randomness) {
+std::shared_ptr<std::vector<Node>> perturbedNodeGrid(int size, double range, const RuntimeExpression &u, int randomness) {
     auto nodes = std::make_shared<std::vector<Node>>();
     
     double delta = range / (float)size;
@@ -231,10 +221,43 @@ SkeletonMesh getGrid(int size, double range) {
     return {std::move(vertices), std::move(indices), std::move(boundary)};
 }
 
-std::pair<std::shared_ptr<std::vector<Node>>, std::vector<unsigned int>> perfectNodeGrid(int size, double range, float (*u)(float, float)) {
+auto indZorderedCmp(const std::vector<glm::dvec2> &vertices, double offset = 1.0) {
+    return [&vertices, offset] (const unsigned int &a, const unsigned int &b) {
+        return compareZorder(vertices[a] + offset, vertices[b] + offset);
+    };
+}
+
+void zOrderMesh(SkeletonMesh &skMesh) {
+    std::vector<glm::dvec2> sortedVertices(skMesh.vertices.size());
+    std::vector<unsigned int> oughtToAt(skMesh.vertices.size()); // idx -> idx_sorted
+    std::vector<unsigned int> atToOught(skMesh.vertices.size()); // idx_sorted -> idx
+
+    for(int i = 0; i < skMesh.vertices.size(); i++) {
+        oughtToAt[i] = i;
+    }
+
+    std::sort(oughtToAt.begin(), oughtToAt.end(), indZorderedCmp(skMesh.vertices));
+
+    for(int i = 0; i < skMesh.vertices.size(); i++) {
+        sortedVertices[i] = skMesh.vertices[oughtToAt[i]];
+        atToOught[oughtToAt[i]] = i;
+    }
+    skMesh.vertices = std::move(sortedVertices);
+
+    for(int i = 0; i < skMesh.indices.size(); i++) {
+        skMesh.indices[i] = atToOught[skMesh.indices[i]];
+    }
+
+    for(int i = 0; i < skMesh.boundary.size(); i++) {
+        skMesh.boundary[i] = atToOught[skMesh.boundary[i]];
+    }
+}
+
+std::pair<std::shared_ptr<std::vector<Node>>, std::vector<unsigned int>> perfectNodeGrid(int size, double range, const RuntimeExpression &u) {
     auto nodes = std::make_shared<std::vector<Node>>();
 
     SkeletonMesh grid = getGrid(size, range);
+    zOrderMesh(grid);
 
     for(auto pos : grid.vertices) {
         Node v = {pos, active, 0.0};
@@ -250,7 +273,7 @@ std::pair<std::shared_ptr<std::vector<Node>>, std::vector<unsigned int>> perfect
     return std::make_pair(nodes, grid.indices);
 }
 
-
+/*
 VertexArray meshGr(const SkeletonMesh &grid, const std::vector<double> values) {
     std::vector<mVertex> mVertices;
 
@@ -283,11 +306,11 @@ VertexArray meshGr(const SkeletonMesh &grid, const std::vector<double> values) {
     triangleMesh.addAttrib(VertexAttrib{3, sizeof(mVertex), GL_FLOAT, (void*)offsetof(mVertex, value)});
     return triangleMesh;
 }
+*/
 
 VertexArray visSolution(const std::unique_ptr<FemMesh> &femmesh, int size, const std::vector<double> &solution) {
     std::vector<mVertex> mVertices;
     std::vector<unsigned int> mIndices;
-
 
     const std::vector<Node> &nodes = *femmesh->nodes;
 
@@ -322,18 +345,17 @@ VertexArray visSolution(const std::unique_ptr<FemMesh> &femmesh, int size, const
     return triangleMesh;
 }
 
-double f(double x, double y) {
-    return -100*y;
-}
 
-float u(float x, float y) {
-    return x;
+time_t getsystime() {
+    auto now = std::chrono::system_clock::now();
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
+    return ms.count();
 }
 
 time_t gettime() {
     auto now = std::chrono::system_clock::now();
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
-    return ms.count();
+    return ms.count() - t0;
 }
 
 VertexArray getScreenQuad() {
@@ -355,12 +377,46 @@ VertexArray getScreenQuad() {
     return screenQuad;
 }
 
+class CursorListenerImpl : public CursorListener {
+    public:
+        CursorListenerImpl(int wWidth, int wHeight) {
+            this->wWidth = wWidth;
+            this->wHeight = wHeight;
+        }
+
+        int wWidth;
+        int wHeight;
+
+        void onCursorMove(Cursor cursor) {
+            cursorPos.x = 2 * ((cursor.pos.x) / wWidth) - 1.f;
+            cursorPos.y = 2 * ((wHeight - cursor.pos.y) / wHeight) - 1.f;
+        }
+
+};
+
+unsigned int getLaplacianShader(std::string expr) {
+    std::string fCode = ShaderLoader::loadFileParametrized("general/graphics/glsl/laplacian.frag", "F_IMPL", expr);
+    unsigned int fShader = ShaderLoader::compileFragmentShader(fCode.c_str());
+
+    std::string vCode = ShaderLoader::loadFile("general/graphics/glsl/post.vert");
+    unsigned int vShader = ShaderLoader::compileVertexShader(vCode.c_str());
+
+    unsigned int laplacianId = ShaderLoader::createShaderProgram(vShader, fShader); 
+
+    glDeleteShader(vShader);
+    glDeleteShader(fShader);
+
+    return laplacianId;
+}
+
 int main(int argc, char* argv[]) {
 
     const int wWidth = 1000, wHeight = 1000;
 
     ctx = new EventHandler("Test", glm::vec2(wWidth, wHeight));
-    ctx->disableMouse();
+    CursorListenerImpl cl(wWidth, wHeight);
+    ctx->addListener(&cl);
+
     ctx->disable(GL_DEPTH_TEST);
 
     // Setup Dear ImGui context
@@ -375,13 +431,15 @@ int main(int argc, char* argv[]) {
     RenderTarget pixelFb({wWidth, wHeight});
 
     const double range = 1.0;
-    int elementSubdivision = 2;
+    int elementSubdivision = 3;
     int prElementSubdivisionSize = elementSubdivision;
+
+    bool updateNeccessary = false;
 
     int randomness = 5;
     int prRandomness = randomness;
 
-    const time_t t0 = gettime();
+    t0 = gettime();
     time_t time = 0;
 
     VertexArray screen = getScreenQuad();
@@ -400,23 +458,23 @@ int main(int argc, char* argv[]) {
     printf("t: %ld; Elements genned!\n", time);
     */
 
+    RuntimeExpression fExpr("0.0");
+    RuntimeExpression uExpr("x");
+
     //create mesh
-    auto meshdata = perfectNodeGrid(elementSubdivision, range, u);
+    auto meshdata = perfectNodeGrid(elementSubdivision, range, uExpr);
     auto fTriangles = std::make_unique<FemMesh>(meshdata.first, meshdata.second);
 
-    time = gettime() - t0;
+    time = gettime();
     printf("t: %ld; Mesh init!\n", time);
 
     Solver solver;
-    time = gettime() - t0;
+
+    time = gettime();
     printf("t: %ld; Solving...\n", time);
-
-    auto solution = solver.solve(*fTriangles, f);
-    time = gettime() - t0;
+    auto solution = solver.solve(*fTriangles, fExpr);
+    time = gettime();
     printf("t: %ld; Solved! colors.size %zu\n", time, solution.size());
-
-    int errGridSize = 1;
-    int prErrGridSize = errGridSize;
 
     bool renderError = false;
     bool prRenderError = renderError;
@@ -424,42 +482,37 @@ int main(int argc, char* argv[]) {
     float hError = 0.5*sqrt(range / elementSubdivision);
     float prHError = hError;
 
-    auto errGrid = getGrid(errGridSize, range);
-
-    time = gettime() - t0;
-    printf("t: %ld; Estimated errors!\n", time);
-
     VertexArray solMesh = visSolution(fTriangles, elementSubdivision, solution);
-    time = gettime() - t0;
+    time = gettime();
     printf("t: %ld; Solution mesh!\n", time);
 
     const Shader color("general/graphics/glsl/color.vert", "general/graphics/glsl/color.frag");
-//  const Shader point("general/graphics/glsl/color.vert", "general/graphics/glsl/point.frag");
-//  const Shader whiteLines("general/graphics/glsl/color.vert", "general/graphics/glsl/white.frag");
+    const Shader whiteLines("general/graphics/glsl/color.vert", "general/graphics/glsl/white.frag");
 
     glm::vec3 lowColor = {0.05, 0.05, 0.05};
     glm::vec3 midColor = {0.2, 0.2, 0.5};
     glm::vec3 highColor = {1.0, 0.3, 0.0};
 
     const Shader post("general/graphics/glsl/post.vert", "general/graphics/glsl/post.frag");
-    const Shader laplacian("general/graphics/glsl/post.vert", "general/graphics/glsl/laplacian.frag");
-
-    laplacian.use();
-    laplacian.setVec3("lowColor", lowColor);
-    laplacian.setVec3("midColor", midColor);
-    laplacian.setVec3("highColor", highColor);
+    Shader *laplacian = new Shader(getLaplacianShader(fExpr.exprStr));
 
     post.use();
     post.setVec3("lowColor", lowColor);
     post.setVec3("midColor", midColor);
     post.setVec3("highColor", highColor);
 
-    glm::vec3 thresholds = {-10.0f, 0.0f, 10.0f};
+    glm::vec3 thresholds = {-5.0f, 0.0f, 5.0f};
+
+    laplacian->use();
+    laplacian->setVec3("lowColor", lowColor);
+    laplacian->setVec3("midColor", midColor);
+    laplacian->setVec3("highColor", highColor);
+
+    std::string fShaderRes = "Shader Success", fExprtkRes = "Success", uExprtkRes = "Success";
 
     glfwSwapInterval(1);
     glPointSize(10.0f);
     while(!glfwWindowShouldClose(ctx->window)) {
-        ctx->pollEvents();
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -467,7 +520,7 @@ int main(int argc, char* argv[]) {
         ImGui::NewFrame();
         {
             ImGui::Begin("Options");
-            ImGui::SliderInt("solution resolution", &elementSubdivision, 1, 500);
+            ImGui::SliderInt("solution resolution", &elementSubdivision, 1, 100);
             ImGui::SliderFloat("error diff step", &hError, 0.0f, 0.5f);
 
             ImGui::SliderFloat("lowest", &thresholds.x, -10.f, 10.f);
@@ -476,31 +529,64 @@ int main(int argc, char* argv[]) {
 
             ImGui::Checkbox("show error", &renderError);
             ImGui::End();
+
+            ImGui::Begin("Expressions");
+            
+            ImGui::InputTextMultiline("f(x,y) - Poisson", &fExpr.exprStr);
+            ImGui::InputTextMultiline("u(x,y) - Dirichlet", &uExpr.exprStr);
+
+            if(ImGui::Button("Compile and refresh")) {
+                fShaderRes = "Shader Success";
+                fExprtkRes = "Success";
+                uExprtkRes = "Success";
+
+                if(!fExpr.update()) {
+                    fExprtkRes = "Fail";
+                }
+                if(!uExpr.update()) {
+                    uExprtkRes = "Fail";
+                }
+
+                unsigned int laplacianShaderId = 0;
+                try {
+                    laplacianShaderId = getLaplacianShader(fExpr.exprStr);
+                } catch(const std::runtime_error &e) {
+                    fShaderRes = e.what();
+                    laplacianShaderId = 0;
+                }
+
+                if(laplacianShaderId != 0) {
+                    delete laplacian;
+                    laplacian = new Shader(laplacianShaderId);
+
+                    laplacian->use();
+                    laplacian->setVec3("lowColor", lowColor);
+                    laplacian->setVec3("midColor", midColor);
+                    laplacian->setVec3("highColor", highColor);
+                }
+                updateNeccessary = true;
+            }
+
+            ImGui::Text("f: %s\n"
+                    "   %s\n"
+                    "u: %s\n", fExprtkRes.c_str(), fShaderRes.c_str(), uExprtkRes.c_str());
+
+            ImGui::End();
         }
 
         unsigned int indexcount = 0;
 
-        if(hError != prHError || prErrGridSize != errGridSize || prElementSubdivisionSize != elementSubdivision) {
-
-//          errGrid = getGrid(errGridSize, range);
-//          errors = solver.estimateError(*fTriangles, solution, errGrid, f, hError);
-//          errMesh = meshGr(errGrid, errors);
-
-//          prErrGridSize = errGridSize;
-//          prHError = hError;
-        }
-
-        if(prElementSubdivisionSize != elementSubdivision || randomness != prRandomness) {
+        if(prElementSubdivisionSize != elementSubdivision || randomness != prRandomness || updateNeccessary) {
 //          *nodes = *perturbedNodeGrid(elementSubdivision, range, u, randomness);
-            auto newmesh = perfectNodeGrid(elementSubdivision, range, u);
+            auto newmesh = perfectNodeGrid(elementSubdivision, range, uExpr);
             fTriangles->remesh(newmesh.first, newmesh.second);
 
-            time = gettime() - t0;
+            time = gettime();
             printf("t: %ld; Solving...\n", time);
 
-            solution = solver.solve(*fTriangles, f);
+            solution = solver.solve(*fTriangles, fExpr);
 
-            time = gettime() - t0;
+            time = gettime();
             printf("t: %ld; Solved!\n", time);
 
             solMesh = visSolution(fTriangles, elementSubdivision, solution);
@@ -508,6 +594,7 @@ int main(int argc, char* argv[]) {
             prElementSubdivisionSize = elementSubdivision;
             prRandomness = randomness;
             hError = range/elementSubdivision;
+            updateNeccessary = false;
         }
 
 
@@ -524,15 +611,6 @@ int main(int argc, char* argv[]) {
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         glDrawElements(GL_TRIANGLES, indexcount, GL_UNSIGNED_INT, 0);
 
-//      whiteLines.use();
-//      glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-//      glDrawArrays(GL_LINES, 0, triangle.vertexCount);
-//      glDrawElements(GL_TRIANGLES, triangle.indexCount, GL_UNSIGNED_INT, 0);
-
-        //Draw points
-//      point.use();
-//      glDrawArrays(GL_POINTS, 0, triangle.vertexCount);
-//      glDrawElements(GL_POINTS, triangle.indexCount, GL_UNSIGNED_INT, 0);
 
         //Draw to screen ===================================================
         ctx->bindFramebuffer(0);
@@ -541,10 +619,10 @@ int main(int argc, char* argv[]) {
         pixelFb.getColor(0).bind(0);
 
         if(renderError) {
-            laplacian.use();
-            laplacian.setInt("screenTexture", 0);
-            laplacian.setFloat("diffstep", hError);
-            laplacian.setVec3("thresholds", thresholds);
+            laplacian->use();
+            laplacian->setInt("screenTexture", 0);
+            laplacian->setFloat("diffstep", hError);
+            laplacian->setVec3("thresholds", thresholds);
         } else {
             post.use();
             post.setInt("screenTexture", 0);
@@ -553,11 +631,26 @@ int main(int argc, char* argv[]) {
 
         glDrawArrays(GL_TRIANGLES, 0, 6);
 
+        solMesh.bind();
+        unsigned int currentElement = fTriangles->elementFor(cursorPos);
+        if(currentElement >= 0) {
+            whiteLines.use();
+//          unsigned int indices[3];
+
+//          indices[0] = fTriangles->indexOfNodeOfElement(currentElement, 0);
+//          indices[1] = fTriangles->indexOfNodeOfElement(currentElement, 1);
+//          indices[2] = fTriangles->indexOfNodeOfElement(currentElement, 2);
+
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_INT, (void*)(currentElement*3*sizeof(unsigned int)));
+        }
+
         ctx->bindVertexArray(0);
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
+        ctx->pollEvents();
         glfwSwapBuffers(ctx->window);
     }
 

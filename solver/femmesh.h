@@ -61,12 +61,14 @@ class FemMesh {
         void remesh(std::shared_ptr<std::vector<Node>> nodes, const std::vector<unsigned int> &indices);
 
         bool pointInElem(unsigned int elInd, glm::dvec2 point) const;
+        int elementFor(glm::dvec2 point) const;
 
         std::vector<double> evaluate(const std::vector<double> &solution, const std::vector<glm::dvec2> &points) const;
         double evaluate(const std::vector<double> &solution, glm::dvec2 point) const;
         double hasBoundary(unsigned int nodeId) const;
 
         std::shared_ptr<std::vector<Node>> nodes;
+
         std::vector<unsigned int> activeNodes;
         std::vector<unsigned int> passiveNodes;
 

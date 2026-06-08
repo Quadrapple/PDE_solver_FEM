@@ -28,8 +28,8 @@ vec3 interpolateColors(float val, vec3 first, vec3 second, vec3 third, vec3 thre
 }
 
 void main() {
-    vec2 txt = texture(screenTexture, TexCoords).xy;
-    float val = txt.x - txt.y;
+    float txt = texture(screenTexture, TexCoords).x ;
+    float val = txt;
     vec3 color = interpolateColors(val, lowColor, midColor, highColor, thresholds);
     FragColor = vec4(color, 1.0);
     

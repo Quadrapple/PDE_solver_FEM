@@ -84,7 +84,7 @@ void EventHandler::disableMouse() {
 void EventHandler::enableMouse() {
     if(!mouseEnabled) {
         mouseEnabled = true;
-        setCursorMode(GLFW_CURSOR_DISABLED);
+        setCursorMode(GLFW_CURSOR_NORMAL);
     }
 }
 

@@ -7,6 +7,21 @@ Shader::Shader(std::string vertexSource, std::string fragmentSource) {
     id = ShaderLoader::createShader(vertexSource, fragmentSource);
 }
 
+Shader::Shader(unsigned int id) : id(id){
+    printf("shader %d created\n", id);
+}
+
+Shader::~Shader() {
+    glDeleteProgram(id);
+    printf("shader %d destroyed\n", id);
+}
+
+Shader Shader::operator=(const Shader& shader) {
+    glDeleteProgram(id);
+    this->id = shader.id;
+    return *this;
+}
+
 void Shader::use() const { 
     State::getContext().useProgram(id);
 }

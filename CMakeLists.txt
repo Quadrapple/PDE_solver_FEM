@@ -16,9 +16,11 @@ add_executable(${PROJECT_NAME}
     general/graphics/shader/shader.cpp general/graphics/shader/shader_loader.cpp
 
     ${IMGUI}/imgui.cpp ${IMGUI}/imgui_impl_glfw.cpp ${IMGUI}/imgui_impl_opengl3.cpp
-    ${IMGUI}/imgui_demo.cpp  ${IMGUI}/imgui_draw.cpp  ${IMGUI}/imgui_widgets.cpp ${IMGUI}/imgui_tables.cpp 
+    ${IMGUI}/imgui_demo.cpp  ${IMGUI}/imgui_draw.cpp  ${IMGUI}/imgui_widgets.cpp ${IMGUI}/imgui_tables.cpp ${IMGUI}/imgui_stdlib.cpp
 
-    solver/femmesh.cpp solver/solver.cpp solver/quadedge.cpp solver/quadtree.cpp solver/bbhierarchy.cpp)
+    solver/femmesh.cpp solver/solver.cpp solver/quadedge.cpp solver/quadtree.cpp solver/bbhierarchy.cpp solver/comparators.cpp
+    solver/exprtk_wrapper.cpp
+)
 
 find_package(OpenMP REQUIRED)
 

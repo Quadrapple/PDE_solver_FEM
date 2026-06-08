@@ -7,6 +7,7 @@
 #include <iterator>
 #include <simd>
 #include <omp.h>
+#include "exprtk_wrapper.h"
 
 double triangle_area(glm::dvec2 p0, glm::dvec2 p1, glm::dvec2 p2) {
     return ((p0.x - p1.x)*(p0.y - p2.y) - (p0.x - p2.x)*(p0.y - p1.y)) / 2;
@@ -21,7 +22,7 @@ double K_ij(glm::dvec2 p0, glm::dvec2 p1, glm::dvec2 p2, int i, int j) {
 }
 
 //edge-midpoint approximation
-double F_i(glm::dvec2 p1, glm::dvec2 p2, glm::dvec2 p3, double (*function)(double, double), int i) {
+double F_i(glm::dvec2 p1, glm::dvec2 p2, glm::dvec2 p3, const RuntimeExpression &function, int i) {
     const glm::dvec2 e12 = (p1 + p2) * 0.5;
     const glm::dvec2 e13 = (p1 + p3) * 0.5;
     const glm::dvec2 e23 = (p2 + p3) * 0.5;
@@ -73,7 +74,7 @@ void SquareMatrix::put(unsigned int row, unsigned int col, double val) {
     }
 }
 
-std::pair<SquareMatrix, std::vector<double>> Solver::assemble(const FemMesh &mesh, double (*function)(double, double)) {
+std::pair<SquareMatrix, std::vector<double>> Solver::assemble(const FemMesh &mesh, const RuntimeExpression &function) {
     const int sideLen = mesh.activeNodes.size();
     const int elementCount = mesh.elems.size();
 
@@ -155,8 +156,7 @@ extern time_t gettime();
 
 std::vector<double> CG(const CompactSquareMatrix &M, const std::vector<double> &F) {
 
-    const time_t t0 = gettime();
-    time_t time = 0;
+    time_t time = gettime();
     printf("t: %ld; Entered CG loop\n", time);
 
     const unsigned int len = F.size();
@@ -167,15 +167,12 @@ std::vector<double> CG(const CompactSquareMatrix &M, const std::vector<double> &
 
     double rTz = 0.0;
 
+    //precondition
     for(int i = 0; i < len; i++) {
         double acc = 0.0;
         for(int j = M.rowStarts[i]; j < M.rowStarts[i+1]; j++) {
 
-            acc += glm::abs(M.values[j]);
-//          if(i == M.indices[j]) {
-//              precond[i] = 1.0 / M.values[j];
-//              break;
-//          }
+            acc += glm::abs(M.values[j])*glm::abs(M.values[j]);
         }
         precond[i] = 1.0 / acc;
 
@@ -194,11 +191,10 @@ std::vector<double> CG(const CompactSquareMatrix &M, const std::vector<double> &
     double pMp = 0.0;
     int k = 0;
 
-
 #pragma omp parallel if(F.size() > 10000)
     while(k < len) {
 
-#pragma omp for reduction (+:pMp)
+#pragma omp for simd reduction (+:pMp)
         for(int i = 0; i < len; i++) {
             double acc = 0.0;
 
@@ -216,7 +212,7 @@ std::vector<double> CG(const CompactSquareMatrix &M, const std::vector<double> &
             rTz_n = 0;
         }
 
-#pragma omp for reduction (+:rTz_n)
+#pragma omp for simd reduction (+:rTz_n)
         for(int i = 0; i < len; i++) {
             x[i] += alpha * p[i];
             r[i] -= alpha * Mp[i];
@@ -225,10 +221,10 @@ std::vector<double> CG(const CompactSquareMatrix &M, const std::vector<double> &
 
 #pragma omp single
         {
-//          time = gettime() - t0;
+//          time = gettime();
 //          printf("t: %ld; k = %d, r = %lf\n", time, k, rTz_n);
 
-            if(rTz_n < 0.0000001) {
+            if(rTz_n < 0.0000000001) {
                 k = len;
 
             } else {
@@ -239,21 +235,21 @@ std::vector<double> CG(const CompactSquareMatrix &M, const std::vector<double> &
             }
         }
 
-#pragma omp for 
+#pragma omp for simd 
         for(int i = 0; i < len; i++) {
             p[i] *= beta;
             p[i] += r[i] * precond[i];
         }
     }
 
-    time = gettime() - t0;
+    time = gettime();
     printf("t: %ld; Exited CG loop\n", time);
 
     return x;
 }
 
 std::vector<double> Solver::estimateError(const FemMesh &mesh, const std::vector<double> &solution,
-        const SkeletonMesh &estmesh, double (*f)(double, double), double h) {
+        const SkeletonMesh &estmesh, const RuntimeExpression &f, double h) {
 
     std::vector<double> estimates;
     std::vector<glm::dvec2> estPoints;
@@ -321,8 +317,8 @@ void printSquareMat(const SquareMatrix &M) {
     }
 }
 
-std::vector<double> Solver::solve(const FemMesh &m, double (*function)(double, double)) {
-    auto K_F = assemble(m, function);
+std::vector<double> Solver::solve(const FemMesh &m, const RuntimeExpression &f) {
+    auto K_F = assemble(m, f);
     CompactSquareMatrix K = compactify(K_F.first);
     std::vector<double> F = K_F.second;
     std::vector<double> solution = CG(K, F);

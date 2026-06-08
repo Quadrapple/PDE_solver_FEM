@@ -6,9 +6,9 @@
 
 unsigned int ShaderLoader::createShader(std::string vertexSource, std::string fragmentSource) {
     std::string vCode = loadFile(vertexSource.c_str());
-    std::string fCode = loadFile(fragmentSource.c_str());
-
     unsigned int vShader = compileVertexShader(vCode.c_str());
+
+    std::string fCode = loadFile(fragmentSource.c_str());
     unsigned int fShader = compileFragmentShader(fCode.c_str());
 
     return createShaderProgram(vShader, fShader);
@@ -30,9 +30,18 @@ std::string ShaderLoader::loadFile(const char *filename) {
         sourceFile.close();
 
     } catch (const std::ifstream::failure& e) {
-        printf("ERROR! SHADER::FAILED_FILE_READ %s\n", filename);
+        printf("SHADERLOADER: Failed to read %s, %s\n", filename);
     }
 
+    return source;
+}
+
+std::string ShaderLoader::loadFileParametrized(const char *filename, std::string constant, std::string replacement) {
+    std::string source = loadFile(filename);
+
+    int inspos = source.find_first_of("\n")+1;
+
+    source.insert(inspos, std::format("#define {} {}\n", constant, replacement));
     return source;
 }
 
@@ -63,7 +72,7 @@ void ShaderLoader::checkCompile(unsigned int id, std::string type) {
     glGetShaderiv(id, GL_COMPILE_STATUS, &success);
     if(!success) {
         glGetShaderInfoLog(id, 512, NULL, infoLog);
-        throw std::runtime_error(std::format("Failed to compile {} shader: {}", type, infoLog));
+        throw std::runtime_error(std::format("SHADERLOADER: Failed to compile {} shader: {}", type, infoLog));
     }
 }
 
@@ -86,7 +95,7 @@ void ShaderLoader::checkLink(unsigned int id) {
     glGetProgramiv(id, GL_LINK_STATUS, &success); 
     if(!success) {
         glGetProgramInfoLog(id, 512, NULL, infoLog);
-        throw std::runtime_error(std::format("Failed to link shader: {}", infoLog));
+        throw std::runtime_error(std::format("SHADERLOADER: Failed to link shader: {}", infoLog));
     }
 }
 

@@ -10,15 +10,19 @@
 class ShaderLoader {
     public:
         static unsigned int createShader(std::string vertexSource, std::string fragmentSource);
-    private:
+
         static unsigned int createShaderProgram(unsigned int vertexShader, unsigned int fragmentShader);
-        static void checkLink(unsigned int id);
+
+        static std::string loadFileParametrized(const char *filename, std::string constant, std::string replacement);
+        static std::string loadFile(const char *filename);
 
         static unsigned int compileVertexShader(const char *source);
         static unsigned int compileFragmentShader(const char *source);
+
+    private:
+        static void checkLink(unsigned int id);
         static void checkCompile(unsigned int id, std::string type);
 
-        static std::string loadFile(const char *filename);
 };
 
 #endif

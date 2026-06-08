@@ -9,7 +9,12 @@ class Shader {
     public:
         unsigned int id;
 
+        Shader(unsigned int id);
+
+        Shader operator=(const Shader& shader);
+
         Shader(std::string vertexSource, std::string fragmentSource);
+        ~Shader();
 
         void use() const;
 
