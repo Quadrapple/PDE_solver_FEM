@@ -1,8 +1,10 @@
 ### Poisson-Laplace equation solver using the FEM
 
-The solver uses first-order triangular elements
-![Example 1](/images/sin_img.png)
+The solver uses first-order triangular elements.
 
-It also can visualize the laplacian deviation
-![Example 2](/images/sin_img_error_low.png)
-![Example 3](/images/sin_img_error_high.png)
+<img src="/images/sin_img.png" alt="Example 1" width="500" height="500">
+
+It can also visualize the Laplacian deviation.
+
+<img src="/images/sin_img_error_low.png" alt="Example 2" width="500" height="500">
+<img src="/images/sin_img_error_high.png" alt="Example 3" width="500" height="500">
